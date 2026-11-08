@@ -71,15 +71,26 @@ Postgres writes every change to a write-ahead log before committing. Supabase ru
 
 We start with Postgres Changes because the database is already our source of truth and it requires no extra moving parts. If a game ever needs more than a few updates per second per room, switch that game to Broadcast sent from the server action.
 
-### Data model (conceptual)
+### Data model
 
-Rithvik writes the actual migrations and RLS policies. These are the shapes to aim for.
+The real schema is `supabase/migrations/20261108000001_init.sql`.
 
-- **rooms**: id, 4-letter code (unique while active), game slug, status (lobby / playing / finished), settings JSON, public state JSON, host player id, created at.
-- **players**: id, room id, auth user id, nickname, is host, connected, private state JSON, joined at.
+- **rooms**: id, 4-letter code (unique among non-closed rooms), game slug, status (lobby / playing / finished / closed), settings JSON, public state JSON, `version` (optimistic concurrency), host player id, created/updated at.
+- **players**: id, room id, auth user id, nickname (unique per room, case-insensitive), is host, connected, joined at. The Host screen has a player row with `is_host = true` so it can read the room; engines never see it.
+- **player_private**: player id, room id, auth user id, state JSON. Private state is a separate table, not a column on players, because RLS filters rows, not columns.
 - Later, if needed: **actions** log table for replay and debugging.
 
-Public state is everything every device may see (phase, alive list, timer end time, vote tallies). Private state is what only that player may see (role, secret prompt). RLS: anyone in the room reads the room row and all players' public columns; a player reads only their own private state.
+Public state is everything every device may see (phase, alive list, timer end time, vote tallies). Private state is what only that player may see (role, secret prompt). RLS: room members read the room row and all player rows; a player reads only their own `player_private` row. Browsers have no write grants at all; server actions write with the service-role key.
+
+Writes go through the `apply_room_state` Postgres function, which updates the room and every private row in one transaction, guarded by the expected `version`. On a version conflict the server action reloads and retries. Rooms untouched for 12 hours are closed when the next room is created, which frees their codes.
+
+### Timers on serverless
+
+Vercel functions can't run background timers. Engines put a deadline in public state and expose it through `engine.deadline()`. Once that time passes on a device (using a skew-corrected server clock), the device calls the `tickRoom` server action, and the server checks its own clock before calling `engine.tick()`. The Host screen nudges first, and phones are a fallback a couple of seconds later. Duplicate ticks are harmless.
+
+### Realtime on the client
+
+`src/platform/useRoom.ts` subscribes to Postgres Changes on `rooms`, `players` and `player_private` for the room, and treats every event as "refetch the room". It also refetches on reconnect, on tab focus, and every 6 seconds as a safety net. That is simpler than merging partial payloads and survives phones sleeping.
 
 ### Identity and joining
 
@@ -102,23 +113,31 @@ Deciding how `rithvik.si/larpparty` reaches Vercel is open. Preferred: a subdoma
 Every game is a folder under `src/games/<slug>/` that exports one manifest object and is registered in `src/games/index.ts`. The platform knows nothing about any specific game beyond this contract.
 
 ```ts
-// Conceptual shape. The real type lives in src/platform/game-contract.ts (Rithvik writes it).
+// Summary. The real type lives in src/platform/game-contract.ts.
 interface GameManifest<Settings, PublicState, PrivateState, Intent> {
   slug: string;                       // "boilermafia"
   name: string;                       // "BoilerMafia"
   description: string;                // shown on the home card
-  minPlayers: number;
+  minPlayers: number;                 // hard limits; settings may narrow them
   maxPlayers: number;
   defaultSettings: Settings;
-  SettingsForm: React.ComponentType;  // shown to the host at creation
-  HostView: React.ComponentType;      // the big screen
-  PlayerView: React.ComponentType;    // each phone
+  playerLimits(settings): { min; max };
+  SettingsForm: ComponentType<{ value; onChange }>;   // shown to the host at creation
+  HostView: ComponentType<GameViewProps>;             // the big screen
+  PlayerView: ComponentType<GameViewProps>;           // each phone
   engine: {
-    init(players, settings): { public: PublicState; private: Record<playerId, PrivateState> };
-    reduce(state, intent, ctx): newState;   // pure, deterministic, server-only, throws on illegal intents
-    tick?(state, ctx): newState;            // optional timer advancement, called by the server
+    parseSettings(raw: unknown): Settings;            // sanitize untrusted input from the browser
+    validateStart(playerCount, settings): string | null;
+    parseIntent(raw: unknown): Intent;                // throws IllegalIntentError if malformed
+    init(players, settings, ctx): { public; private: Record<playerId, PrivateState> };
+    reduce(state, intent, ctx): newState;   // pure, deterministic, server-only, throws IllegalIntentError
+    tick?(state, ctx): newState;            // timer advancement; return the same object if nothing changes
+    deadline?(public): number | null;       // when the next tick is due
+    isOver(public): boolean;                // room moves to "finished"
   };
 }
+// ctx = { now, random } (+ actorId, actorIsHost for reduce). Engines never read clocks or Math.random directly.
+// GameViewProps = { roomCode, players, me, publicState, privateState, dispatch, serverNow, playAgain? }
 ```
 
 Rules for a game folder:
@@ -271,6 +290,8 @@ Reaction elimination inspired by Mario Party.
 ## Open decisions
 
 - DNS: subdomain pointed at Vercel versus `basePath` under `rithvik.si`.
-- Whether the Host device is also a player, or a narrator-only screen. BoilerMafia default: narrator-only. Each manifest may override.
+- Whether the Host device is also a player. Decided for MVP: the Host is a narrator-only screen with an `is_host` player row. A manifest may opt into host-as-player later.
 - Narration delivery: on-screen text for MVP. Text-to-speech is a Phase 2 candidate.
 - Keep-alive strategy for the Supabase free-tier pause.
+- Supabase project ownership. Rithvik's account is at the 2-active-free-project cap, so the `larpparty` project is owned by a teammate's account, with Rithvik invited as a member.
+- Anonymous sign-in rate limit is per IP, and a whole party shares one IP. `supabase/config.toml` raises it to 200 an hour. Check the hosted project's Auth rate limits match.
