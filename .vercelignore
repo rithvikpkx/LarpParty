@@ -17,3 +17,4 @@ node_modules
 vitest.config.ts
 .prettierrc.json
 .prettierignore
+/e2e/

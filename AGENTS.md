@@ -8,26 +8,74 @@ This file is the source of truth for how we build. Agents and humans both follow
 
 Three people, each working with their own coding agent.
 
-| Person  | Role                          | Owns                                                                                                 |
-| ------- | ----------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Rithvik | Infrastructure engineer       | `src/platform/`, `src/app/` routing shell, `supabase/`, Vercel config, CI, the game plug-in contract  |
-| Dash    | Game and website engineer     | Individual games under `src/games/`, game UI, home page cards                                        |
-| Ojas    | Game and website engineer     | Individual games under `src/games/`, game UI, home page cards                                        |
+| Person  | Role                      | Owns                                                                                                 |
+| ------- | ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Rithvik | Infrastructure engineer   | `src/platform/`, `src/app/` routing shell, `supabase/`, Vercel config, CI, the game plug-in contract |
+| Dash    | Game and website engineer | Individual games under `src/games/`, game UI, home page cards                                        |
+| Ojas    | Game and website engineer | Individual games under `src/games/`, game UI, home page cards                                        |
 
 Rule of thumb: game engineers should be able to ship a new game without touching anything outside `src/games/<slug>/` plus one line in the game registry. If they need a platform change, they open an issue or PR against `src/platform/` and Rithvik reviews it.
 
+## Current state (read this first)
+
+Last updated 2026-11-08. Keep this section current; it is how context survives between agent sessions.
+
+**Live**
+
+- Site: https://larpparty.rithvik.si (custom domain). Also https://larpparty.vercel.app.
+- Games registered: BoilerMafia (Phase 1, complete), Monster Seeking Match and Signal Faker (Dash's, in progress). Shy Guy Says is design-only.
+- UI: 18 switchable styles (see "UI styles"). Default for new devices: Black & Gold.
+
+**History**
+
+- PR #1: Phase 1 MVP. The platform and BoilerMafia were agent-written under an "AI override" from Rithvik, including the human-owned pieces (migrations, RLS, contract, server actions, engine). Humans should still read and own them.
+- PR #2: `.vercelignore` excludes docs, `supabase/`, tests and `/e2e/` from deploys. The required-review rule was dropped.
+- PR #3: the 18 UI styles. The style mockups came from the "LarpParty Style Lab" artifact.
+
+**Infrastructure**
+
+| Thing        | Where                                                                                                                                                                                                                                                                                        |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Git          | https://github.com/rithvikpkx/LarpParty. `main` auto-deploys to production through the Vercel GitHub integration. Every pushed branch gets a preview deploy. Previews are behind Vercel login (Deployment Protection), so phones need a Vercel login or a shareable link from the dashboard. |
+| Vercel       | Project `larpparty`, team `rithvikpkx-7614s-projects` (Hobby). Env vars for Production and Preview: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`.                                                                                               |
+| Domain       | `rithvik.si` DNS lives at Hostinger (nameservers `*.dns-parking.com`). `larpparty.rithvik.si` is a CNAME to `f6081776e4fb0ebd.vercel-dns-017.com`. The root `rithvik.si` stays on Hostinger.                                                                                                 |
+| Supabase     | Project ref `zitumyodkyfbtlwcjmqp` (owned by a teammate's account because Rithvik's account is at the 2-free-project cap). Anonymous sign-ins are enabled in its dashboard. Free tier: it pauses after 7 days idle; unpause it from the dashboard before a party.                            |
+| Prod secrets | On Rithvik's laptop only: `~/larpparty-prod.env` (URL, publishable key, secret key, `SUPABASE_DB_URL`). Never commit it.                                                                                                                                                                     |
+
+**Runbook**
+
+- **Local dev:** start Docker, then `supabase start -x studio,imgproxy,storage-api,edge-runtime,logflare,vector,mailpit,postgres-meta,supavisor`. `.env.local` points at `http://127.0.0.1:54321` with the local keys from `supabase status -o env`. Then `pnpm dev`, or `pnpm build && pnpm start` for prod-like testing.
+- **New migration:** add `supabase/migrations/<timestamp>_name.sql`. Locally run `supabase migration up`. For prod, run `set -a && . ~/larpparty-prod.env && set +a && supabase db push --db-url "$SUPABASE_DB_URL"`. Apply additive migrations to prod _before_ merging code that needs them; preview deploys share the prod database.
+- **Checks before a PR:** `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build`.
+- **End-to-end tests:** these are Playwright scripts in `e2e/`. They aren't part of `pnpm test` and need `npm i playwright` in some scratch folder.
+  - `game.mjs`: a host plus 6 phones play a full BoilerMafia game. It checks RLS privacy, refresh/rejoin, voting, the winner and play again. Run it as `BASE=<site> SUPABASE_URL=<url> ANON_KEY=<publishable key> node e2e/game.mjs`.
+  - `themes.mjs`: screenshots every style on every screen, and checks that the host's style reaches phones live and that a phone's override sticks.
+  - `perf.mjs`: measures FPS and style-switch cost at 4× CPU throttle.
+  - Each run creates about 10 anonymous users, and Supabase rate-limits anonymous sign-ins per IP.
+- **Deploy:** merge to `main`. To check production, curl the site, then run `e2e/game.mjs` against `https://larpparty.rithvik.si`.
+
+**Gotchas we hit**
+
+- The CLIs (`pnpm` 10, `vercel`) are installed under `~/.nvm/versions/node/v24.22.2/bin`, which may not be on an agent shell's PATH. The shell is zsh: use `${(P)name}`, not `${!name}`.
+- `vercel link` / `vercel env pull` rewrites `.env.local` and once blanked `NEXT_PUBLIC_SUPABASE_URL`. If the browser says "Missing NEXT_PUBLIC_SUPABASE_URL", check that file and rebuild. `NEXT_PUBLIC_*` values are inlined at build time.
+- `prettier-plugin-tailwindcss` trims leading spaces inside className string literals, so `` `stage${dark ? " is-night" : ""}` `` became `stageis-night`. Build class lists with full strings (`dark ? "stage is-night" : "stage"`) or `[...].filter(Boolean).join(" ")`.
+- TypeScript is pinned to 5.x; TS 7 is native and breaks the Next build. pnpm must stay on 10, because Vercel's lockfile support lags newer versions.
+- Don't pipe `pnpm build` into `head`: the pipe closing kills the build halfway.
+- A `.vercelignore` pattern without a leading slash matches at any depth. `supabase/` once excluded `src/platform/supabase/`; that's why it is `/supabase/`.
+- `[data-style]` CSS tokens that use `var(--u)` must be declared on `.scr`, not on the html-level style block, because `--u` is only defined on screens.
+
 ## Tech stack
 
-| Layer        | Choice                                         | Why                                                                                          |
-| ------------ | ---------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Framework    | Next.js (App Router), TypeScript strict        | Vercel-native, server actions give us a free authoritative backend                            |
-| Styling      | Tailwind CSS                                   | Fast iteration, consistent spacing/type scale, easy Apple-style minimalism                    |
-| Database     | Supabase Postgres                              | Free tier, SQL we can learn, Realtime built in                                               |
-| Realtime     | Supabase Realtime (Postgres Changes first)     | Browsers hold the WebSocket to Supabase, not Vercel. See Architecture.                        |
-| Identity     | Supabase anonymous auth + nickname             | Gives each device a stable user id so Row Level Security can hide private state               |
-| Hosting      | Vercel Hobby                                   | Free, preview deploy per PR                                                                   |
-| Tests        | Vitest for game engines, Playwright later      | Game logic is pure functions and is the thing worth testing                                   |
-| Package mgr  | pnpm                                           |                                                                                               |
+| Layer       | Choice                                                | Why                                                                             |
+| ----------- | ----------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Framework   | Next.js (App Router), TypeScript strict               | Vercel-native, server actions give us a free authoritative backend              |
+| Styling     | Tailwind CSS                                          | Fast iteration, consistent spacing/type scale, easy Apple-style minimalism      |
+| Database    | Supabase Postgres                                     | Free tier, SQL we can learn, Realtime built in                                  |
+| Realtime    | Supabase Realtime (Postgres Changes first)            | Browsers hold the WebSocket to Supabase, not Vercel. See Architecture.          |
+| Identity    | Supabase anonymous auth + nickname                    | Gives each device a stable user id so Row Level Security can hide private state |
+| Hosting     | Vercel Hobby                                          | Free, preview deploy per PR                                                     |
+| Tests       | Vitest for game engines; Playwright scripts in `e2e/` | Game logic is pure functions; e2e scripts drive real host + phone browsers      |
+| Package mgr | pnpm                                                  |                                                                                 |
 
 Everything must run on free tiers. Known free-tier constraints:
 
@@ -106,7 +154,7 @@ Do not key identity on IP address. Everyone at a party is on the same Wi-Fi and 
 /[game]/[code]         the room. Renders HostView if this device created it, else PlayerView
 ```
 
-Deciding how `rithvik.si/larpparty` reaches Vercel is open. Preferred: a subdomain (`larpparty.rithvik.si`) pointed at Vercel by DNS, which avoids Next.js `basePath` and keeps QR join URLs short. Fall back to `basePath` only if the root domain must stay on Hostinger.
+The site is served at `larpparty.rithvik.si` (a CNAME to Vercel), so there is no Next.js `basePath`. QR join links use `window.location.origin`, so they follow whichever domain the host screen is on. Serving at `rithvik.si/larpparty` instead would need `basePath`, prefixed `/art/` image URLs, and a proxy (for example a Cloudflare Worker) in front of Hostinger. We decided against it.
 
 ### Game plug-in contract
 
@@ -115,25 +163,25 @@ Every game is a folder under `src/games/<slug>/` that exports one manifest objec
 ```ts
 // Summary. The real type lives in src/platform/game-contract.ts.
 interface GameManifest<Settings, PublicState, PrivateState, Intent> {
-  slug: string;                       // "boilermafia"
-  name: string;                       // "BoilerMafia"
-  description: string;                // shown on the home card
-  minPlayers: number;                 // hard limits; settings may narrow them
+  slug: string; // "boilermafia"
+  name: string; // "BoilerMafia"
+  description: string; // shown on the home card
+  minPlayers: number; // hard limits; settings may narrow them
   maxPlayers: number;
   defaultSettings: Settings;
   playerLimits(settings): { min; max };
-  SettingsForm: ComponentType<{ value; onChange }>;   // shown to the host at creation
-  HostView: ComponentType<GameViewProps>;             // the big screen
-  PlayerView: ComponentType<GameViewProps>;           // each phone
+  SettingsForm: ComponentType<{ value; onChange }>; // shown to the host at creation
+  HostView: ComponentType<GameViewProps>; // the big screen
+  PlayerView: ComponentType<GameViewProps>; // each phone
   engine: {
-    parseSettings(raw: unknown): Settings;            // sanitize untrusted input from the browser
+    parseSettings(raw: unknown): Settings; // sanitize untrusted input from the browser
     validateStart(playerCount, settings): string | null;
-    parseIntent(raw: unknown): Intent;                // throws IllegalIntentError if malformed
+    parseIntent(raw: unknown): Intent; // throws IllegalIntentError if malformed
     init(players, settings, ctx): { public; private: Record<playerId, PrivateState> };
-    reduce(state, intent, ctx): newState;   // pure, deterministic, server-only, throws IllegalIntentError
-    tick?(state, ctx): newState;            // timer advancement; return the same object if nothing changes
-    deadline?(public): number | null;       // when the next tick is due
-    isOver(public): boolean;                // room moves to "finished"
+    reduce(state, intent, ctx): newState; // pure, deterministic, server-only, throws IllegalIntentError
+    tick?(state, ctx): newState; // timer advancement; return the same object if nothing changes
+    deadline?(public): number | null; // when the next tick is due
+    isOver(public): boolean; // room moves to "finished"
   };
 }
 // ctx = { now, random } (+ actorId, actorIsHost for reduce). Engines never read clocks or Math.random directly.
@@ -193,7 +241,7 @@ Principles we actually follow: separation of concerns, spec-driven development, 
 
 - **TypeScript strict** everywhere. No `any` without a comment explaining why.
 - **Spec before code.** Every game starts with `SPEC.md`: phases, roles, intents, win conditions, settings, and edge cases (disconnects, ties, min players). The agent should refuse to write an engine without one.
-- **TDD for engines only.** Write the failing engine test, then make it pass. UI components do not need unit tests. Playwright end-to-end tests for the join flow come after the MVP.
+- **TDD for engines only.** Write the failing engine test, then make it pass. UI components do not need unit tests. Run `e2e/game.mjs` before merging platform or BoilerMafia changes.
 - **Lint and format** with ESLint and Prettier on save and in CI.
 - **Branches and PRs.** Branch from `main`, open a PR, Vercel preview deploy must build. Squash merge.
 - **Commit messages** are short imperative sentences, optionally prefixed with the area: `platform:`, `boilermafia:`, `repo:`.
@@ -305,38 +353,38 @@ Reaction elimination inspired by Mario Party.
 - Server records the time the correct flag locks. A tap is valid if it is the right color and arrives within 1200 ms of that time, measured on the server.
 - Wrong color or too slow eliminates the player for the round. Rounds repeat until one champion remains.
 
-6. New Party Game: "Babel Wire" (The Multi-Language Telephone Game) Vibe: Absurd mistranslation chaos, global telephone, and language degradation. The Hook: A classic telephone game where every time a message passes from one player to the next, the server automatically runs it through a randomized translation chain (e.g., English 
-→ Swahili 
-→ Japanese 
-→ Portuguese 
-→ English), mutating the sentence into absolute nonsense by the end. Step-by-Step Scenario & Flow: Secret Prompt Phase: Every player types a normal, innocent sentence or phrase on their phone (e.g., "I need to rush to class across campus before it starts raining"). The Mutation Chain: Player A’s sentence is sent to the backend. The free translation API mutates it through 3 to 4 random international languages sequentially before translating it back into English. The Delivery: Player B receives the corrupted, hilarious result on their screen (e.g., "The mechanical sky is crying while I run to the metal box"). Drawing or Interpretation Phase: Player B must either draw what they think that sentence means or write a brand-new response. The Grand Reveal (End Goal): The main screen displays the original prompt side-by-side with the final mutated monstrosity and the hilarious timeline of how it degraded step-by-step. Points are awarded for the funniest mutations or for correctly guessing the original core intent.
+6. New Party Game: "Babel Wire" (The Multi-Language Telephone Game) Vibe: Absurd mistranslation chaos, global telephone, and language degradation. The Hook: A classic telephone game where every time a message passes from one player to the next, the server automatically runs it through a randomized translation chain (e.g., English
+   → Swahili
+   → Japanese
+   → Portuguese
+   → English), mutating the sentence into absolute nonsense by the end. Step-by-Step Scenario & Flow: Secret Prompt Phase: Every player types a normal, innocent sentence or phrase on their phone (e.g., "I need to rush to class across campus before it starts raining"). The Mutation Chain: Player A’s sentence is sent to the backend. The free translation API mutates it through 3 to 4 random international languages sequentially before translating it back into English. The Delivery: Player B receives the corrupted, hilarious result on their screen (e.g., "The mechanical sky is crying while I run to the metal box"). Drawing or Interpretation Phase: Player B must either draw what they think that sentence means or write a brand-new response. The Grand Reveal (End Goal): The main screen displays the original prompt side-by-side with the final mutated monstrosity and the hilarious timeline of how it degraded step-by-step. Points are awarded for the funniest mutations or for correctly guessing the original core intent.
 
-8. Hot Potato Bomb (Inspired by Mario Party Hot Potato minigames) The Hook: Rapid-fire trivia or execution under an exploding timer. Gameplay Loop: A virtual ticking bomb appears on the main screen with a live countdown (e.g., 15 seconds). A rapid prompt appears: "Name a building on Purdue campus that starts with M!" The player holding the "potato" must type a correct answer or tap a fast button, then press a "Pass" button to instantly fling the bomb to another player's phone screen. Whoever is holding the bomb when it detonates loses life points.
+7. Hot Potato Bomb (Inspired by Mario Party Hot Potato minigames) The Hook: Rapid-fire trivia or execution under an exploding timer. Gameplay Loop: A virtual ticking bomb appears on the main screen with a live countdown (e.g., 15 seconds). A rapid prompt appears: "Name a building on Purdue campus that starts with M!" The player holding the "potato" must type a correct answer or tap a fast button, then press a "Pass" button to instantly fling the bomb to another player's phone screen. Whoever is holding the bomb when it detonates loses life points.
 
-9. Purdue Party Game: "Bell Tower Bluff: The Legend of PAL 3.0"Vibe: Fibbage meets Quiplash—hyper-focused on real Purdue campus myths, brutal course lore (CS 240, ECE exams), iconic traditions (Breakfast Club, Grand Prix), and legendary campus landmarks.The Hook: Every round presents a absurd, 100% real (or completely made-up) fact about Purdue University with a missing blank. Players type out a fake, highly believable lie on their phones to trick their friends, while trying to spot the actual truth hidden among the crowd.Step-by-Step Scenario & FlowThe Prompt Phase: The main screen displays a Purdue-specific campus headline or legend with a missing blank:Prompt 1 (Campus Curse): "According to Purdue myth, if you walk under the Bell Tower before graduation, you won't graduate in 4 years—unless you run directly into ______."Prompt 2 (Legendary Campus Chaos): "During a legendary Finals Week storm, engineering students famously tried to fix the broken campus Wi-Fi (PAL 3.0) by duct-taping a router to ______."Prompt 3 (Breakfast Club Lore): "At 5:00 AM on a Home Game Saturday, a student dressed as a giant hot dog was spotted getting thrown out of Harry's Chocolate Shop for trying to pay with ______."The Deception Phase: Every player uses their phone interface to type out a hilarious, convincing lie to fill in the blank (e.g., "a 24-pack of Mad Mushroom Cheesesticks" or "their CS 240 midterm score").The Voting Matrix: The main screen shuffles all player-submitted lies together with the actual historical/campus truth. Players vote on their phones for what they think is the real answer.The Scoring Twist:Truth Points: Earn $+100\text{ pts}$ for picking the actual real answer."Bait" Bonus: Earn $+50\text{ pts}$ every time a classmate falls for your fake lie.
+8. Purdue Party Game: "Bell Tower Bluff: The Legend of PAL 3.0"Vibe: Fibbage meets Quiplash—hyper-focused on real Purdue campus myths, brutal course lore (CS 240, ECE exams), iconic traditions (Breakfast Club, Grand Prix), and legendary campus landmarks.The Hook: Every round presents a absurd, 100% real (or completely made-up) fact about Purdue University with a missing blank. Players type out a fake, highly believable lie on their phones to trick their friends, while trying to spot the actual truth hidden among the crowd.Step-by-Step Scenario & FlowThe Prompt Phase: The main screen displays a Purdue-specific campus headline or legend with a missing blank:Prompt 1 (Campus Curse): "According to Purdue myth, if you walk under the Bell Tower before graduation, you won't graduate in 4 years—unless you run directly into ______."Prompt 2 (Legendary Campus Chaos): "During a legendary Finals Week storm, engineering students famously tried to fix the broken campus Wi-Fi (PAL 3.0) by duct-taping a router to ______."Prompt 3 (Breakfast Club Lore): "At 5:00 AM on a Home Game Saturday, a student dressed as a giant hot dog was spotted getting thrown out of Harry's Chocolate Shop for trying to pay with ______."The Deception Phase: Every player uses their phone interface to type out a hilarious, convincing lie to fill in the blank (e.g., "a 24-pack of Mad Mushroom Cheesesticks" or "their CS 240 midterm score").The Voting Matrix: The main screen shuffles all player-submitted lies together with the actual historical/campus truth. Players vote on their phones for what they think is the real answer.The Scoring Twist:Truth Points: Earn $+100\text{ pts}$ for picking the actual real answer."Bait" Bonus: Earn $+50\text{ pts}$ every time a classmate falls for your fake lie.
 
-10. Purdue Course Syllabus Trivia & Roguelike Quest ("Degree Speedrun") Instead of just boring static multiple-choice questions, transform Purdue course syllabi (from AAE, CS, MFET, MET, etc.) into an interactive Roguelike Quiz Crawler with fun objectives: The Hook: "Degree Speedrun" — You are an undergraduate trying to survive 8 semesters in 5 minutes by beating course boss battles using actual syllabus data. Step-by-Step Scenario & Flow: Major Selection: Choose your major on your phone (e.g., CS 180, AAE 251, MET 102, MFET 250). Course Boss Encounters: Each level is a brutal course syllabus. To pass the midterm boss, you must answer rapid-fire, high-yield MCQ trivia extracted directly from official Purdue course learning objectives, coding logic, or lab safety rules. Fun Objectives & Perks: Survive a curve: Answer 3 questions right in a row to trigger a "Class Curve" shield. Office Hours Help: Use a one-time "TA Hint" lifeline that eliminates two wrong choices. GPA Meter: Every wrong answer drops your GPA; if it hits 1.0, you face academic probation (sudden death mini-game).
+9. Purdue Course Syllabus Trivia & Roguelike Quest ("Degree Speedrun") Instead of just boring static multiple-choice questions, transform Purdue course syllabi (from AAE, CS, MFET, MET, etc.) into an interactive Roguelike Quiz Crawler with fun objectives: The Hook: "Degree Speedrun" — You are an undergraduate trying to survive 8 semesters in 5 minutes by beating course boss battles using actual syllabus data. Step-by-Step Scenario & Flow: Major Selection: Choose your major on your phone (e.g., CS 180, AAE 251, MET 102, MFET 250). Course Boss Encounters: Each level is a brutal course syllabus. To pass the midterm boss, you must answer rapid-fire, high-yield MCQ trivia extracted directly from official Purdue course learning objectives, coding logic, or lab safety rules. Fun Objectives & Perks: Survive a curve: Answer 3 questions right in a row to trigger a "Class Curve" shield. Office Hours Help: Use a one-time "TA Hint" lifeline that eliminates two wrong choices. GPA Meter: Every wrong answer drops your GPA; if it hits 1.0, you face academic probation (sudden death mini-game).
 
-11. Purdue Party Game: "Deep Cut: The Ross-Ade Trench" (Purdue Rarity Engine)Vibe: Krillion.io meets high-stakes, infinitely scalable multiplayer party trivia.The Hook: In Deep Cut, players race against a 20-second timer to submit valid Purdue-related answers on their phones. Common answers yield surface-level points, while obscure, deeply specific knowledge plunges you deeper into the scoring tiers. The system is built to ingest and expand into any campus domain dynamically—from syllabus data to daily dining menus.Step-by-Step Scenario & FlowPrompt Dispatch Phase: The main display reveals a hyper-specific category prompt pulled from dynamic campus datasets:Prompt 1 (Purdue CS & Engineering Syllabi): "Name a compiler flag, tool, error message, or data structure concept featured in the CS 240, CS 180, or ECE 264 syllabi."Prompt 2 (Ford Dining Court Real-Time Menu): "Name a dish, sauce, station, or dietary option from today's live Ford Dining Court menu."Prompt 3 (Purdue Campus Lore & Locations): "Name an academic building, basement lab, or tunnel connection on the Purdue campus."Submission Phase (20-Second Phone Lock): Players type their answers into their phone touchscreens before the timer expires.Scenario A (CS Syllabus Prompt):Player A submits: Segmentation Fault (Obvious/common $\rightarrow$ 10 pts).Player B submits: Valgrind (Mid-depth recall $\rightarrow$ 40 pts).Player C submits: -Wuninitialized (Obscure compiler flag $\rightarrow$ 80 pts).Player D submits: void *(*func_ptr)(void *) (Deepest cut / complex signature $\rightarrow$ 100 pts).Scenario B (Ford Dining Court Menu Prompt):Player A submits: Brick Oven Pizza (Surface-level $\rightarrow$ 10 pts).Player B submits: Vegetarian Curry (Mid-depth $\rightarrow$ 40 pts).Player C submits: On-The-Go Box (Deep cut $\rightarrow$ 80 pts).Player D submits: Halal Station Seasoned Tofu (Gem tier / hyper-specific daily item $\rightarrow$ 100 pts).High-Stakes Party Twist ("Stolen Deep Cut"):If two or more players in the room type the exact same deep-cut answer, their rarity collapses down to Surface Tier (10 pts) because it is no longer unique.Risk/Reward Loop: Do you play a safe answer to lock in 40 points, or risk typing an obscure malloc memory leak edge-case or daily dining special that someone else might also guess?How "Deep Cut" Expands Infinitely Beyond ThisBecause this game relies on structured datasets, your team can continuously feed new content into the Supabase database without changing any game logic:                  ┌─────────────────────────────────────┐
-                  │      Dataset Ingestion Engine       │
-                  └──────────────────┬──────────────────┘
-                                     │
-         ┌───────────────────────────┼───────────────────────────┐
-         ▼                           ▼                           ▼
-┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
-│ Purdue Syllabi   │       │ Dining API       │       │ Course Catalog   │
-│ CS, ECE, AAE,    │       │ Daily menus from │       │ Prereq chains,   │
-│ MET, MFET        │       │ Ford, Wiley,     │       │ professor names, │
-│                  │       │ Windsor, Earhart │       │ exam locations   │
-└──────────────────┘       └──────────────────┘       └──────────────────┘
-Dynamic Course Syllabi: Extract topics, assignment names, compiler flags, and lab tools straight from syllabi across all majors (CS, ECE, AAE, MET, MFET, IE).Live Dining Court Menus: Hook into daily dining API feeds to turn real-time breakfast, lunch, and dinner menus from Ford, Wiley, Windsor, and Earhart into instant trivia pools.Course Catalog & Prereq Chains: Generate prompts around prerequisite paths (e.g., "Name a course that lists CS 180 as a prerequisite" or "Name a professor who has taught AAE 251").Campus Culture & Student Life: Expand to local campus spots, dorm names, bus routes, Purdue sports stats, and historic tradition lore.
+10. Purdue Party Game: "Deep Cut: The Ross-Ade Trench" (Purdue Rarity Engine)Vibe: Krillion.io meets high-stakes, infinitely scalable multiplayer party trivia.The Hook: In Deep Cut, players race against a 20-second timer to submit valid Purdue-related answers on their phones. Common answers yield surface-level points, while obscure, deeply specific knowledge plunges you deeper into the scoring tiers. The system is built to ingest and expand into any campus domain dynamically—from syllabus data to daily dining menus.Step-by-Step Scenario & FlowPrompt Dispatch Phase: The main display reveals a hyper-specific category prompt pulled from dynamic campus datasets:Prompt 1 (Purdue CS & Engineering Syllabi): "Name a compiler flag, tool, error message, or data structure concept featured in the CS 240, CS 180, or ECE 264 syllabi."Prompt 2 (Ford Dining Court Real-Time Menu): "Name a dish, sauce, station, or dietary option from today's live Ford Dining Court menu."Prompt 3 (Purdue Campus Lore & Locations): "Name an academic building, basement lab, or tunnel connection on the Purdue campus."Submission Phase (20-Second Phone Lock): Players type their answers into their phone touchscreens before the timer expires.Scenario A (CS Syllabus Prompt):Player A submits: Segmentation Fault (Obvious/common $\rightarrow$ 10 pts).Player B submits: Valgrind (Mid-depth recall $\rightarrow$ 40 pts).Player C submits: -Wuninitialized (Obscure compiler flag $\rightarrow$ 80 pts).Player D submits: void *(*func_ptr)(void *) (Deepest cut / complex signature $\rightarrow$ 100 pts).Scenario B (Ford Dining Court Menu Prompt):Player A submits: Brick Oven Pizza (Surface-level $\rightarrow$ 10 pts).Player B submits: Vegetarian Curry (Mid-depth $\rightarrow$ 40 pts).Player C submits: On-The-Go Box (Deep cut $\rightarrow$ 80 pts).Player D submits: Halal Station Seasoned Tofu (Gem tier / hyper-specific daily item $\rightarrow$ 100 pts).High-Stakes Party Twist ("Stolen Deep Cut"):If two or more players in the room type the exact same deep-cut answer, their rarity collapses down to Surface Tier (10 pts) because it is no longer unique.Risk/Reward Loop: Do you play a safe answer to lock in 40 points, or risk typing an obscure malloc memory leak edge-case or daily dining special that someone else might also guess?How "Deep Cut" Expands Infinitely Beyond ThisBecause this game relies on structured datasets, your team can continuously feed new content into the Supabase database without changing any game logic: ┌─────────────────────────────────────┐
+    │ Dataset Ingestion Engine │
+    └──────────────────┬──────────────────┘
+    │
+    ┌───────────────────────────┼───────────────────────────┐
+    ▼ ▼ ▼
+    ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+    │ Purdue Syllabi │ │ Dining API │ │ Course Catalog │
+    │ CS, ECE, AAE, │ │ Daily menus from │ │ Prereq chains, │
+    │ MET, MFET │ │ Ford, Wiley, │ │ professor names, │
+    │ │ │ Windsor, Earhart │ │ exam locations │
+    └──────────────────┘ └──────────────────┘ └──────────────────┘
+    Dynamic Course Syllabi: Extract topics, assignment names, compiler flags, and lab tools straight from syllabi across all majors (CS, ECE, AAE, MET, MFET, IE).Live Dining Court Menus: Hook into daily dining API feeds to turn real-time breakfast, lunch, and dinner menus from Ford, Wiley, Windsor, and Earhart into instant trivia pools.Course Catalog & Prereq Chains: Generate prompts around prerequisite paths (e.g., "Name a course that lists CS 180 as a prerequisite" or "Name a professor who has taught AAE 251").Campus Culture & Student Life: Expand to local campus spots, dorm names, bus routes, Purdue sports stats, and historic tradition lore.
 
 ## Open decisions
 
-- DNS: subdomain pointed at Vercel versus `basePath` under `rithvik.si`.
+- DNS: decided. The subdomain `larpparty.rithvik.si` is a CNAME to Vercel (see Current state).
 - Whether the Host device is also a player. Decided for MVP: the Host is a narrator-only screen with an `is_host` player row. A manifest may opt into host-as-player later.
 - Narration delivery: on-screen text for MVP. Text-to-speech is a Phase 2 candidate.
 - Fonts load from Google Fonts per style (one stylesheet request when a style is first used). If we ever need offline or stricter privacy, self-host them with `next/font`.
 - Keep-alive strategy for the Supabase free-tier pause.
-- Supabase project ownership. Rithvik's account is at the 2-active-free-project cap, so the `larpparty` project is owned by a teammate's account, with Rithvik invited as a member.
+- Supabase project ownership: decided. Project `zitumyodkyfbtlwcjmqp` is owned by a teammate's account (Rithvik's is at the 2-free-project cap). Rithvik administers it through the DB connection string in `~/larpparty-prod.env`.
 - Anonymous sign-in rate limit is per IP, and a whole party shares one IP. `supabase/config.toml` raises it to 200 an hour. Check the hosted project's Auth rate limits match.
