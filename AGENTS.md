@@ -1,56 +1,276 @@
-# Tech Stack
+# LarpParty
 
-Hosting: Vercel + hostinger domain (rithvik.si/larpparty)
-Web Framework: Next.js
-Database: Supabase
+A browser-based party game platform in the style of Jackbox. One device (the Host screen) creates a game and shows a room code. Everyone else joins on their phone with that code and a nickname. No accounts, no app install.
 
-Any other things that may be needed can be suggest. Open to additions.
+This file is the source of truth for how we build. Agents and humans both follow it. When a decision changes, update this file in the same PR.
 
-# General Functionality
+## Team and ownership
 
-The flow (at the beginning. Simple MVP):
+Three people, each working with their own coding agent.
 
-- User opens website (rithvik.si/larpparty). No login.
-- They see multiple cards of all the available games to play
-- They click a game, the game opens and they start playing. (rithvik.si/larpparty/<game-name>)
+| Person  | Role                          | Owns                                                                                                 |
+| ------- | ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Rithvik | Infrastructure engineer       | `src/platform/`, `src/app/` routing shell, `supabase/`, Vercel config, CI, the game plug-in contract  |
+| Dash    | Game and website engineer     | Individual games under `src/games/`, game UI, home page cards                                        |
+| Ojas    | Game and website engineer     | Individual games under `src/games/`, game UI, home page cards                                        |
 
-The design should be minimal, intuitive, and good-looking. Lean toward Apple design.
+Rule of thumb: game engineers should be able to ship a new game without touching anything outside `src/games/<slug>/` plus one line in the game registry. If they need a platform change, they open an issue or PR against `src/platform/` and Rithvik reviews it.
 
-# Final Vision
+## Tech stack
 
-2 classes of games - fun games and tournament games.
+| Layer        | Choice                                         | Why                                                                                          |
+| ------------ | ---------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Framework    | Next.js (App Router), TypeScript strict        | Vercel-native, server actions give us a free authoritative backend                            |
+| Styling      | Tailwind CSS                                   | Fast iteration, consistent spacing/type scale, easy Apple-style minimalism                    |
+| Database     | Supabase Postgres                              | Free tier, SQL we can learn, Realtime built in                                               |
+| Realtime     | Supabase Realtime (Postgres Changes first)     | Browsers hold the WebSocket to Supabase, not Vercel. See Architecture.                        |
+| Identity     | Supabase anonymous auth + nickname             | Gives each device a stable user id so Row Level Security can hide private state               |
+| Hosting      | Vercel Hobby                                   | Free, preview deploy per PR                                                                   |
+| Tests        | Vitest for game engines, Playwright later      | Game logic is pure functions and is the thing worth testing                                   |
+| Package mgr  | pnpm                                           |                                                                                               |
 
-The game described below like Werewolf at Night would fit under the fun games to select from directly on the website.
-The other option would be to select the tournament. This would have a set of less complicated games, from which a subset would be randomly chosen to have the players play. An example of a game that would fit this style would be Krillion.
+Everything must run on free tiers. Known free-tier constraints:
 
-# Dev Phases
+- Supabase free projects pause after 7 days with no activity. Someone unpauses from the dashboard before a party. We may add a weekly keep-alive later.
+- Supabase Realtime free tier: roughly 200 concurrent connections and 2M messages per month. Plenty for a room of 15 phones.
+- Vercel Hobby serverless functions cannot hold long-lived connections. We never need them to, because Realtime connections terminate at Supabase.
 
-- First, we want to build out an MVP. The MVP is just a list of clickable mini games that users can play in their browser. One game on this list is enough for this first dev phase. This phase is done when there is a url that users can visit, and there is a card for a mini game (werewolf game) and they can click the game to start playing.
+## Architecture
 
-- Second, we want to move it into the final vision which is where the entire website itself becomes a game instead of just a list of games. Refer to the final vision section for more context on that.
+### The one idea to understand
 
-# Desired Architecture
+The server is the only thing allowed to change game state. Phones and the Host screen send intents ("I vote for Dash", "I tap RED"). A Next.js server action validates the intent, runs the game's reducer, and writes the new state to Postgres. Supabase Realtime pushes the changed rows to every subscribed device. Clients render whatever state they receive. They never compute game outcomes locally.
 
-- 3 people working on this with their own coding agents.
-- Keep general architecture modular to work on it in a team of 3.
-- Maintain high separation of concern to maximize developoment velocity within the team.
+```
+phone / host screen
+   │  intent (server action call over HTTPS)
+   ▼
+Next.js server action on Vercel
+   │  load room + players, run game reducer, validate
+   ▼
+Supabase Postgres  ──► write-ahead log ──► Supabase Realtime server
+                                                   │  WebSocket push
+                                                   ▼
+                                    every device subscribed to that room
+```
 
-# Games
+Why this shape:
 
-Describing the Fun Games that are in the website-
+- Hidden information stays hidden. Roles live in a per-player private row protected by Row Level Security, so a Werewolf's phone cannot read the Seer's role.
+- Cheating is hard. The client can ask to kill someone, but the reducer decides whether that player is allowed to.
+- Reconnect is free. State is in the database, so a refreshed phone just resubscribes and re-renders.
+- Timing games work. The server action stamps `now()` when the intent arrives, so Shy Guy Says compares server times, not phone clocks.
 
-1. BoilerMafia - Online version of Werewolf at night with narrator that makes the game flow. Creates a server that hosts the game and lets every individual scan a qr code with their phones to play along.
+### Supabase Realtime, from first principles
 
-2. Monster Seeking Match (Flirting & Dating Social Deduction)Vibe: Monster Seeking Monster style secret dating, texting, and emotional betrayal.The Hook: Everyone is assigned a hidden monster identity with unique win conditions and secret night powers, competing over 4-5 simulated "in-game days."Step-by-Step Scenario & Flow:Role Reveal: Players receive private monster cards on their phones (e.g., Vampire, Werewolf, Ghost, Serial Flirt).Texting Phase Scenario: A 90-second timer begins. Players use their phone chat interface to send private DMs to other players.Scenario A (Standard Player): Can send up to 3 messages to test trust or coordinate dates.Scenario B (Serial Flirt): Can send up to 6 messages to maximize social reach.Date Night Phase Scenario: Every player's phone displays a selection wheel of all alive players. They must tap one player to "ask out on a date."Resolution & Scoring Scenarios:Mutual Match Scenario: Player A chooses Player B AND Player B chooses Player A $\rightarrow$ Both earn base points (+100 pts).Vampire Power Scenario: If a Vampire successfully matches, their secret ability triggers, stealing 50% of their date's total points earned that round.Werewolf Power Scenario: Points are multiplied by $3\times$ on odd-numbered rounds, but drop to $0$ points on even-numbered rounds regardless of matching.Ghost Power Scenario (Rejection Rule): The Ghost intentionally tries to get rejected. If they choose a player who does not choose them back, the Ghost earns a massive +100 bonus points.Leaderboard Update: The main screen displays a dynamic score ticker tracking standings across all rounds.
+Postgres writes every change to a write-ahead log before committing. Supabase runs a separate Realtime server that reads that log through logical replication and forwards change events to browsers over WebSockets. Three primitives:
 
-3. Signal Faker
-   Vibe: Inspired by Jackbox Fakin' It. The Hook: A physical gesture and prompt game where everyone knows the real instruction except one hidden impostor who must desperately blend in. Step-by-Step Scenario & Flow: Secret Prompt Distribution: The server assigns roles. All humans receive an identical physical prompt, while the Impostor receives a generic safe prompt. Category Scenarios: Scenario A (Hand Gesture): Prompt: "Raise your hand if you have ever failed a driving test." (Impostor sees: "Raise your hand when the timer hits zero"). Scenario B (Number Count): Prompt: "Hold up fingers for how many siblings you have." (Impostor sees: "Hold up 1, 2, or 3 fingers"). Scenario C (Point Out): Prompt: "Point directly at the person who takes the longest to reply to texts." (Impostor sees: "Point at the person sitting to your immediate left"). Countdown & Physical Action Scenario: The main screen triggers a loud 3-2-1 audio countdown. All players must physically execute their action in real life simultaneously. Edge Case & Disconnection: If a player's phone loses connection during the countdown, their avatar on the main screen defaults to a neutral resting pose so they don't accidentally spoil the impostor. Interrogation & Voting Scenario: A 30-second timer starts immediately after the action. Players debate who hesitated or looked confused. Phones display a grid of all players; everyone taps their suspected impostor. The player with the most votes is unmasked.
+- **Postgres Changes**: subscribe to inserts/updates/deletes on a table, filtered by column (for example `room_id=eq.<id>`). Respects RLS, so each subscriber only sees rows it is allowed to read. This is what we use first.
+- **Broadcast**: ephemeral pub/sub messages between clients on a channel. Nothing is stored. Useful later for cursor-style or high-frequency signals.
+- **Presence**: who is currently connected to a channel. Useful for the lobby's "connected" dot.
 
-4. Push the Button
-   Vibe: Fast-paced emergency testing under severe time pressure. The Hook: Players complete rapid drawing or rating prompts where humans receive standard prompts and aliens receive subtly nudged variations designed to create anomalies. Step-by-Step Scenario & Flow: Asymmetrical Prompt Assignment: The server designates one player as the hidden Alien. Scenario Example: Humans get: "Rate how delicious raw broccoli is on a scale of 1 to 10." Alien gets: "Rate how delicious chocolate fudge cake is on a scale of 1 to 10." Submission Phase: Players use their phone touchscreens to input their ratings or quick doodles before a 20-second progress bar runs out. Display Matrix Scenario: The main screen displays all responses side-by-side in a public data grid (e.g., Player 1: 2/10, Player 2: 3/10, Player 3: 9/10). Emergency Deliberation & Button Push Scenario: Players analyze the grid. If someone notices a glaring outlier (like the 9/10 rating), any player can physically slam the large on-screen "Push the Button" trigger. Resolution Scenario: The game pauses, and the group locks in a final accusation against the suspected alien. If correct, humans win points; if wrong, the alien steals the match.
+We start with Postgres Changes because the database is already our source of truth and it requires no extra moving parts. If a game ever needs more than a few updates per second per room, switch that game to Broadcast sent from the server action.
 
-5. Shy Guy SaysVibe: Rapid reaction-elimination inspired by Mario Party.The Hook: A strict 1200ms timing challenge testing quick reflexes against host flag fakes.Step-by-Step Scenario & Flow:The Signal Scenario: The main screen displays an animated host character holding up two flags.The Fake-Out Scenario: The host raises a RED flag halfway up, pauses, pulls it back down instantly (testing who taps early), and then fully raises a WHITE flag.Player Interaction: Every player's phone displays two massive color buttons (RED and WHITE).Timing & Elimination Engine:The server logs the exact server timestamp when the correct flag is locked ($T_{signal}$).When a player taps, the phone transmits $T_{tap}$ and the button*pressed.Elimination Rule: If $(T*{tap} - T\_{signal} > 1200\text{ms})$ OR $(\text{button\_pressed} \neq \text{correct\_flag})$, the player is instantly eliminated for that round (is_alive = false), and their avatar on the main screen slumps over. The game repeats rapid-fire rounds until only one surviving champion remains.
+### Data model (conceptual)
 
-# Personal Goals for the team
+Rithvik writes the actual migrations and RLS policies. These are the shapes to aim for.
 
-To learn how to make a website with agentic tools and while following software engineering principles. Also, to stay deeply familiar with the codebase without getting bogged down in specific technical details. Ask us to write high-level and important pieces of code that are integral to building a strong technical understanding of the codebase. Examples: Simple database migrations so that we are forced to think about the specific fields and data base layout for the project. Make sure to provide resources and help so that we can quickly get onboarded with quickly syntax and any other details needed to be known.
+- **rooms**: id, 4-letter code (unique while active), game slug, status (lobby / playing / finished), settings JSON, public state JSON, host player id, created at.
+- **players**: id, room id, auth user id, nickname, is host, connected, private state JSON, joined at.
+- Later, if needed: **actions** log table for replay and debugging.
+
+Public state is everything every device may see (phase, alive list, timer end time, vote tallies). Private state is what only that player may see (role, secret prompt). RLS: anyone in the room reads the room row and all players' public columns; a player reads only their own private state.
+
+### Identity and joining
+
+No login. On first visit the client signs in anonymously with Supabase, which yields a stable user id persisted in the browser. Players type a nickname when joining a room.
+
+Do not key identity on IP address. Everyone at a party is on the same Wi-Fi and shares one public IP, so every phone would collide.
+
+### Routes
+
+```
+/                      home: cards for every registered game
+/[game]                game landing: Create game or Join with code
+/[game]/[code]         the room. Renders HostView if this device created it, else PlayerView
+```
+
+Deciding how `rithvik.si/larpparty` reaches Vercel is open. Preferred: a subdomain (`larpparty.rithvik.si`) pointed at Vercel by DNS, which avoids Next.js `basePath` and keeps QR join URLs short. Fall back to `basePath` only if the root domain must stay on Hostinger.
+
+### Game plug-in contract
+
+Every game is a folder under `src/games/<slug>/` that exports one manifest object and is registered in `src/games/index.ts`. The platform knows nothing about any specific game beyond this contract.
+
+```ts
+// Conceptual shape. The real type lives in src/platform/game-contract.ts (Rithvik writes it).
+interface GameManifest<Settings, PublicState, PrivateState, Intent> {
+  slug: string;                       // "boilermafia"
+  name: string;                       // "BoilerMafia"
+  description: string;                // shown on the home card
+  minPlayers: number;
+  maxPlayers: number;
+  defaultSettings: Settings;
+  SettingsForm: React.ComponentType;  // shown to the host at creation
+  HostView: React.ComponentType;      // the big screen
+  PlayerView: React.ComponentType;    // each phone
+  engine: {
+    init(players, settings): { public: PublicState; private: Record<playerId, PrivateState> };
+    reduce(state, intent, ctx): newState;   // pure, deterministic, server-only, throws on illegal intents
+    tick?(state, ctx): newState;            // optional timer advancement, called by the server
+  };
+}
+```
+
+Rules for a game folder:
+
+- `engine.ts` is pure TypeScript with no React and no Supabase imports. It is the part we test.
+- Views receive state and a `dispatch(intent)` function from platform hooks. They never call Supabase directly.
+- Each game has a `SPEC.md` written before code (see Engineering standards).
+- A game folder may contain anything else it needs: assets, narration scripts, sub-components.
+
+### Repo layout
+
+```
+src/
+  app/                  Next.js routes. Thin. Owned by Rithvik.
+  platform/             Room lifecycle, join flow, realtime hooks, server actions, game contract, supabase client. Owned by Rithvik.
+  games/
+    index.ts            Registry: the only file game engineers edit outside their folder.
+    boilermafia/
+      SPEC.md
+      manifest.ts
+      engine.ts
+      engine.test.ts
+      HostView.tsx
+      PlayerView.tsx
+      SettingsForm.tsx
+  components/           Shared design-system primitives (Button, Card, Timer). Anyone may add; keep them generic.
+supabase/
+  migrations/           SQL migrations, numbered. Written by Rithvik.
+  seed.sql
+```
+
+## Engineering standards
+
+Principles we actually follow: separation of concerns, spec-driven development, test-driven development for game logic, and a design that would scale if it had to. We are not chasing 100% coverage. Functionality first.
+
+- **TypeScript strict** everywhere. No `any` without a comment explaining why.
+- **Spec before code.** Every game starts with `SPEC.md`: phases, roles, intents, win conditions, settings, and edge cases (disconnects, ties, min players). The agent should refuse to write an engine without one.
+- **TDD for engines only.** Write the failing engine test, then make it pass. UI components do not need unit tests. Playwright end-to-end tests for the join flow come after the MVP.
+- **Lint and format** with ESLint and Prettier on save and in CI.
+- **Branches and PRs.** Branch from `main`, open a PR, at least one teammate reviews, Vercel preview deploy must build. Squash merge.
+- **Commit messages** are short imperative sentences, optionally prefixed with the area: `platform:`, `boilermafia:`, `repo:`.
+- **Secrets** live in `.env.local` and Vercel project settings, never in git. The Supabase service role key is server-only.
+- **Design** is minimal and Apple-leaning: generous whitespace, one accent color, system font stack, large touch targets on phone views, subtle motion.
+
+## Learning contract between humans and agents
+
+The team's goal is to come out of this technically strong and employable, not just to have a working site. The agent is a pair programmer, not a vending machine.
+
+**Humans write the code that does the heavy lifting or defines structure.** Examples:
+
+- Database migrations and RLS policies
+- The game contract type and the game registry
+- Route structure in `src/app/`
+- Server actions that validate and dispatch intents
+- Each game's engine state machine (the `reduce` function skeleton and phase transitions)
+- Anything the human says they want to write
+
+**Agents write the code that is tedious or peripheral.** Examples:
+
+- UI components and styling
+- Test scaffolding and fixtures once the human has written the first test
+- Validation helpers, formatters, utilities
+- Animations
+- Configuration boilerplate
+
+**Protocol when an agent reaches human-owned code:**
+
+1. Stop before writing it.
+2. Give a brief: what the file is for, its inputs and outputs, how it connects to neighbors, and the two or three concepts the human needs. Link one or two short, high-quality resources (official docs preferred).
+3. Offer to review once the human has a draft.
+4. If the human replies "AI override", write it, then explain what you wrote and why in a few sentences.
+
+**Agents also:**
+
+- Explain non-obvious choices in plain language as they go.
+- Prefer boring, readable code over clever code.
+- Keep this file updated when a decision changes.
+
+## Dev phases
+
+### Phase 1: MVP
+
+Done when all of the following are true on the deployed URL:
+
+1. Home page shows a card for BoilerMafia.
+2. Clicking it offers Create game or Join with code.
+3. Create game asks for settings (min/max players, role counts, timers), then shows a room code and a QR code on the Host screen.
+4. Phones join with the code and a nickname and appear in the lobby in real time.
+5. Host starts the game. Roles are assigned randomly and shown privately on each phone.
+6. Scripted narration advances on the Host screen ("It was a dark night in the forest...").
+7. Night actions (kill, heal, investigate) are taken on phones by the roles that have them.
+8. Day voting round on phones, result on the Host screen.
+9. Cycle repeats until a win condition is met and the Host screen shows the winner.
+10. A refreshed phone rejoins the same room in the same state.
+
+### Phase 2: The website becomes the game
+
+Two classes of games: fun games picked directly from the home page, and a tournament mode that randomly selects a subset of simpler games and chains them with a running leaderboard. Add richer animation and a persistent party session across games. Design details to be specified when Phase 1 ships.
+
+## Games
+
+### 1. BoilerMafia (Phase 1)
+
+Online Werewolf with a scripted narrator.
+
+- Host creates the lobby and chooses role counts, min/max players, and phase timers.
+- Players join by code, get a random role privately on their phone.
+- Night: narrator script plays on the Host screen; roles with actions act on their phones (Werewolf kills, Doctor heals, Seer investigates).
+- Day: narrator announces results; everyone votes on their phone; the most-voted player is eliminated.
+- Repeat until villagers or werewolves win.
+
+### 2. Monster Seeking Match
+
+Secret-dating social deduction over 4 to 5 in-game days.
+
+- Each player gets a hidden monster identity with its own win condition and power (Vampire, Werewolf, Ghost, Serial Flirt).
+- Texting phase: 90-second timer. Standard players send up to 3 private DMs; Serial Flirt sends up to 6.
+- Date night: each phone shows a wheel of alive players; tap one to ask out.
+- Scoring: mutual match gives both +100. Vampire steals 50% of their date's round points on a match. Werewolf scores 3x on odd rounds and 0 on even rounds. Ghost earns +100 when rejected.
+- Host screen shows a live leaderboard across rounds.
+
+### 3. Signal Faker
+
+Physical gesture game inspired by Fakin' It. One hidden impostor gets a different prompt.
+
+- Everyone receives a prompt privately. Humans get the real one; the impostor gets a generic safe one.
+- Categories: hand gesture ("Raise your hand if you have failed a driving test"), number count ("Hold up fingers for how many siblings you have"), point out ("Point at the person who takes longest to reply to texts").
+- Host screen runs a 3-2-1 audio countdown; everyone acts simultaneously in real life.
+- If a phone disconnects during the countdown, that player's avatar shows a neutral pose so they do not out the impostor.
+- 30-second debate, then everyone votes on their phone. Most votes is unmasked.
+
+### 4. Push the Button
+
+Rapid rating or doodle prompts where one hidden Alien receives a subtly different prompt.
+
+- Humans: "Rate how delicious raw broccoli is, 1 to 10." Alien: "Rate how delicious chocolate fudge cake is, 1 to 10."
+- 20-second submission on phones.
+- Host screen displays all answers in a grid.
+- Any player can slam the on-screen Push the Button trigger to pause and accuse. Correct accusation: humans win. Wrong: the Alien wins.
+
+### 5. Shy Guy Says
+
+Reaction elimination inspired by Mario Party.
+
+- Host screen shows an animated host with a RED and a WHITE flag, including fake-outs (raise halfway, pull back).
+- Phones show two large buttons, RED and WHITE.
+- Server records the time the correct flag locks. A tap is valid if it is the right color and arrives within 1200 ms of that time, measured on the server.
+- Wrong color or too slow eliminates the player for the round. Rounds repeat until one champion remains.
+
+## Open decisions
+
+- DNS: subdomain pointed at Vercel versus `basePath` under `rithvik.si`.
+- Whether the Host device is also a player, or a narrator-only screen. BoilerMafia default: narrator-only. Each manifest may override.
+- Narration delivery: on-screen text for MVP. Text-to-speech is a Phase 2 candidate.
+- Keep-alive strategy for the Supabase free-tier pause.
