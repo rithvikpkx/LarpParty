@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Countdown } from "@/components/Countdown";
+import { Eyebrow, Screen, StyleButton, Timer } from "@/components/ui";
 import type { GameViewProps, SettingsFormProps } from "@/platform/game-contract";
 import type { Intent, PrivateState, PublicState, Settings } from "./engine";
 
 type Props = GameViewProps<PublicState, PrivateState, Intent>;
-const button = "rounded-2xl bg-cyan-300 px-5 py-3 font-bold text-slate-950 disabled:opacity-40";
-const panel = "rounded-3xl border border-white/10 bg-white/10 p-5";
+// Themed classes from src/themes/themes.css, so every UI style applies to this game.
+const button = "btn";
+const panel = "panel p-5";
 const categoryLabels = {
   hands: "Hand signals",
   numbers: "Finger count",
@@ -18,13 +19,14 @@ const categoryIcons = { hands: "✋", numbers: "🖐️", pointing: "👉", face
 export function SettingsForm({ value, onChange }: SettingsFormProps<Settings>) {
   return (
     <div>
-      <p className="mb-4 text-sm text-slate-600">
+      <p className="muted mb-4 text-sm">
         Everyone needs to be together and able to see each other. The host screen runs the countdown.
       </p>
-      <label className="flex items-center justify-between">
+      <label className="flex items-center justify-between gap-3">
         Rounds{" "}
         <select
-          className="rounded-xl border p-3"
+          className="field"
+          style={{ width: "auto" }}
           value={value.rounds}
           onChange={(e) => onChange({ rounds: Number(e.target.value) })}
         >
@@ -67,9 +69,9 @@ export function HostView({ roomCode, players, publicState: p, dispatch, serverNo
     oscillator.stop(ctx.currentTime + 0.2);
   }, [sound, p.phase, p.round, seconds, now]);
   return (
-    <main className="min-h-dvh bg-gradient-to-br from-slate-950 via-indigo-950 to-cyan-950 p-6 text-white">
-      <div className="mx-auto max-w-4xl space-y-6">
-        <header className="flex flex-wrap justify-between gap-2 text-white/65">
+    <Screen kind="tv" className="is-night" kanji="信">
+      <div className="mx-auto w-full max-w-4xl space-y-6 overflow-y-auto">
+        <header className="muted flex flex-wrap justify-between gap-2">
           <span>Signal Faker · {roomCode}</span>
           <span>
             Round {p.round} / {p.rounds}
@@ -79,10 +81,10 @@ export function HostView({ roomCode, players, publicState: p, dispatch, serverNo
           <div aria-hidden="true" className={`mb-4 text-6xl ${p.phase === "perform" ? "animate-bounce" : ""}`}>
             {categoryIcons[p.category]}
           </div>
-          <p className="text-sm tracking-[0.3em] text-cyan-300 uppercase">
+          <Eyebrow>
             {categoryLabels[p.category]} · {p.phase}
-          </p>
-          <h1 className="mt-4 text-4xl font-bold sm:text-6xl">
+          </Eyebrow>
+          <h1 className="disp mt-4 text-4xl sm:text-6xl">
             {
               {
                 action:
@@ -99,8 +101,12 @@ export function HostView({ roomCode, players, publicState: p, dispatch, serverNo
               }[p.phase]
             }
           </h1>
-          {p.deadline && <Countdown deadline={p.deadline} now={serverNow} className="mt-5 text-6xl font-bold" />}
-          <p className="mt-4 text-lg text-white/70">
+          {p.deadline && (
+            <div className="mt-5 text-6xl">
+              <Timer deadline={p.deadline} now={serverNow} className="timer" />
+            </div>
+          )}
+          <p className="muted mt-4 text-lg">
             {p.phase === "action"
               ? p.category === "words"
                 ? "Answer the secret question on your phone."
@@ -119,7 +125,7 @@ export function HostView({ roomCode, players, publicState: p, dispatch, serverNo
           </p>
           {!sound && (
             <button
-              className="mt-4 rounded-xl border border-white/30 px-4 py-2"
+              className="btn ghost sm mt-4"
               onClick={() => {
                 const ctx = new AudioContext();
                 audio.current = ctx;
@@ -133,11 +139,11 @@ export function HostView({ roomCode, players, publicState: p, dispatch, serverNo
         </section>
         {p.category === "words" && ["perform", "discussion", "vote", "results", "over"].includes(p.phase) && (
           <section className={`${panel} animate-rise`}>
-            <h2 className="mb-4 text-2xl font-bold">What everyone said</h2>
+            <h2 className="disp mb-4 text-2xl">What everyone said</h2>
             <div className="grid gap-3 sm:grid-cols-2">
               {p.ids.map((id) => (
-                <p key={id} className="rounded-xl bg-white/10 p-4">
-                  <b className="text-cyan-200">{name(id)}</b>
+                <p key={id} className="msg p-4">
+                  <b>{name(id)}</b>
                   <br />
                   {p.responses[id] || "No answer submitted"}
                 </p>
@@ -147,18 +153,18 @@ export function HostView({ roomCode, players, publicState: p, dispatch, serverNo
         )}
         {p.result && (p.phase === "results" || p.phase === "over") && (
           <section className={panel}>
-            <h2 className="text-3xl font-bold">{p.result.caught ? "Faker caught!" : "The Faker got away!"}</h2>
+            <h2 className="disp text-3xl">{p.result.caught ? "Faker caught!" : "The Faker got away!"}</h2>
             <p className="mt-3 text-xl">
               <strong>{name(p.result.faker)}</strong> was the Faker.{" "}
               {p.result.accused ? `${name(p.result.accused)} was accused.` : "The vote was tied or nobody voted."}
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <p className="rounded-xl bg-white/10 p-4">
+              <p className="msg p-4">
                 <b>Everyone else saw</b>
                 <br />
                 {p.result.humanPrompt}
               </p>
-              <p className="rounded-xl bg-white/10 p-4">
+              <p className="msg p-4">
                 <b>The Faker saw</b>
                 <br />
                 {p.result.fakerPrompt}
@@ -166,7 +172,7 @@ export function HostView({ roomCode, players, publicState: p, dispatch, serverNo
             </div>
             <h3 className="mt-5 font-bold">The votes</h3>
             {p.ids.map((id) => (
-              <p key={id} className="mt-1 text-white/75">
+              <p key={id} className="muted mt-1">
                 {name(id)} → {p.result!.votes[id] ? name(p.result!.votes[id]!) : "no vote"}
               </p>
             ))}
@@ -174,11 +180,11 @@ export function HostView({ roomCode, players, publicState: p, dispatch, serverNo
         )}
         {(p.phase === "results" || p.phase === "over") && (
           <section className={panel}>
-            <h2 className="mb-3 text-xl font-bold">Leaderboard</h2>
+            <h2 className="disp mb-3 text-xl">Leaderboard</h2>
             {[...p.ids]
               .sort((a, b) => p.scores[b] - p.scores[a])
               .map((id) => (
-                <p className="flex justify-between border-t border-white/10 py-2" key={id}>
+                <p className="flex justify-between border-t border-current/10 py-2" key={id}>
                   <span>{name(id)}</span>
                   <span>
                     {p.scores[id]} pts {p.phase === "results" && `(+${p.result?.gains[id] ?? 0})`}
@@ -187,8 +193,13 @@ export function HostView({ roomCode, players, publicState: p, dispatch, serverNo
               ))}
           </section>
         )}
-        {error && <p role="alert">{error}</p>}
-        <div className="text-center">
+        {error && (
+          <p role="alert" className="toast">
+            {error}
+          </p>
+        )}
+        <div className="flex justify-center gap-3 text-center">
+          <StyleButton />
           {p.phase === "over" ? (
             playAgain && (
               <button className={button} onClick={() => void playAgain()}>
@@ -208,7 +219,7 @@ export function HostView({ roomCode, players, publicState: p, dispatch, serverNo
           )}
         </div>
       </div>
-    </main>
+    </Screen>
   );
 }
 export function PlayerView({ me, players, publicState: p, privateState: secret, dispatch, serverNow }: Props) {
@@ -223,33 +234,40 @@ export function PlayerView({ me, players, publicState: p, privateState: secret, 
     setError(r.error ?? "");
     setBusy(false);
   };
-  if (!secret) return <main className="p-8">Reconnecting to your secret prompt…</main>;
+  if (!secret)
+    return (
+      <Screen kind="phone" className="is-night">
+        <p className="center-msg">Reconnecting to your secret prompt…</p>
+      </Screen>
+    );
   return (
-    <main className="min-h-dvh bg-gradient-to-br from-slate-950 via-indigo-950 to-cyan-950 p-5 text-white">
-      <div className="mx-auto max-w-lg space-y-5">
-        <header className="flex justify-between text-white/60">
+    <Screen kind="phone" className="is-night" kanji="信">
+      <div className="space-y-5">
+        <header className="role-head muted">
           <span>
             Round {p.round} / {p.rounds}
           </span>
           <span>
-            {p.phase} {p.deadline && <Countdown deadline={p.deadline} now={serverNow} />}
+            {p.phase} {p.deadline && <Timer deadline={p.deadline} now={serverNow} className="timer-sm" />}{" "}
+            <StyleButton />
           </span>
         </header>
         {p.phase === "action" && (
           <section className={panel}>
-            <p className="text-xs tracking-widest text-cyan-300 uppercase">
-              {categoryLabels[p.category]} · {secret.faker ? "You are the Faker · this is your hint" : "Your secret instruction"} · don’t show anyone
+            <p className="eyebrow">
+              {categoryLabels[p.category]} ·{" "}
+              {secret.faker ? "You are the Faker · this is your hint" : "Your secret instruction"} · don’t show anyone
             </p>
-            <h1 className="mt-4 text-3xl font-bold">{secret.prompt}</h1>
+            <h1 className="disp mt-4 text-3xl">{secret.prompt}</h1>
             {p.category === "words" ? (
               <div>
-                <p className="mt-4 text-white/70">
+                <p className="muted mt-4">
                   Your answer will be shown to everyone when time runs out. You may update it until then.
                 </p>
                 <textarea
                   aria-label="Your answer"
                   maxLength={100}
-                  className="mt-3 w-full rounded-xl bg-white p-3 text-slate-950"
+                  className="field mt-3"
                   value={answer}
                   onChange={(e) => setDraft({ round: p.round, text: e.target.value })}
                   placeholder="Type your answer…"
@@ -261,33 +279,29 @@ export function PlayerView({ me, players, publicState: p, privateState: secret, 
                 >
                   Submit answer
                 </button>
-                {secret.response && <p className="mt-2 text-cyan-200">Saved: {secret.response}</p>}
+                {secret.response && <p className="muted mt-2">Saved: {secret.response}</p>}
               </div>
             ) : (
-              <p className="mt-5 text-white/70">
-                Watch the host screen. Act together at zero, then discuss what you saw.
-              </p>
+              <p className="muted mt-5">Watch the host screen. Act together at zero, then discuss what you saw.</p>
             )}
           </section>
         )}
         {p.phase === "perform" && (
           <section className={`${panel} animate-pulse`}>
-            <h1 className="text-3xl font-bold">
-              {p.category === "words" ? "Answers are on the host screen!" : "Act now!"}
-            </h1>
+            <h1 className="disp text-3xl">{p.category === "words" ? "Answers are on the host screen!" : "Act now!"}</h1>
             <p className="mt-3">{p.category === "words" ? "Compare everyone’s answers." : secret.prompt}</p>
           </section>
         )}
         {p.phase === "discussion" && (
           <section className={panel}>
-            <h1 className="text-3xl font-bold">Talk it out</h1>
-            <p className="mt-3 text-white/70">Who hesitated or acted strangely? Do not show your prompt.</p>
+            <h1 className="disp text-3xl">Talk it out</h1>
+            <p className="muted mt-3">Who hesitated or acted strangely? Do not show your prompt.</p>
           </section>
         )}
         {p.phase === "vote" && (
           <section className={panel}>
-            <h1 className="text-3xl font-bold">Who is the Faker?</h1>
-            <p className="my-3 text-white/70">Choose a suspect, then lock your vote.</p>
+            <h1 className="disp text-3xl">Who is the Faker?</h1>
+            <p className="muted my-3">Choose a suspect, then lock your vote.</p>
             <div className="grid gap-2">
               {p.ids
                 .filter((id) => id !== me.id)
@@ -295,7 +309,7 @@ export function PlayerView({ me, players, publicState: p, privateState: secret, 
                   <button
                     key={id}
                     disabled={busy || secret.locked}
-                    className={`rounded-xl p-4 text-left ${secret.vote === id ? "bg-cyan-300 text-slate-950" : "bg-white/10"}`}
+                    className={secret.vote === id ? "pick on" : "pick"}
                     onClick={() => void send({ type: "vote", target: id })}
                   >
                     {name(id)}
@@ -313,24 +327,24 @@ export function PlayerView({ me, players, publicState: p, privateState: secret, 
         )}
         {(p.phase === "results" || p.phase === "over") && p.result && (
           <section className={panel}>
-            <h1 className="text-3xl font-bold">{p.result.caught ? "Faker caught!" : "Faker escaped!"}</h1>
+            <h1 className="disp text-3xl">{p.result.caught ? "Faker caught!" : "Faker escaped!"}</h1>
             <p className="mt-3">{name(p.result.faker)} was the Faker.</p>
             <p className="mt-2">
               You earned {p.result.gains[me.id]} points. Total: {p.scores[me.id]}
             </p>
-            <p className="mt-4 text-white/70">Watch the host screen for the prompts and votes.</p>
+            <p className="muted mt-4">Watch the host screen for the prompts and votes.</p>
           </section>
         )}
-        <section className="text-sm text-white/60">
+        <section className="muted text-sm">
           Humans score 100 each if the Faker is caught. Otherwise the Faker scores 150. Highest total wins; tied votes
           catch nobody.
         </section>
         {error && (
-          <p role="alert" className="text-rose-300">
+          <p role="alert" className="toast">
             {error}
           </p>
         )}
       </div>
-    </main>
+    </Screen>
   );
 }

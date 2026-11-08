@@ -5,6 +5,7 @@ export const signalFaker: GameManifest<Settings, PublicState, PrivateState, Inte
   slug: "signal-faker",
   name: "Signal Faker",
   description: "One player has a different instruction. Act together, spot the Faker and vote.",
+  art: "flag",
   minPlayers: 3,
   maxPlayers: 12,
   defaultSettings,
