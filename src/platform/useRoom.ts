@@ -23,6 +23,8 @@ export interface LiveRoom {
   settings: unknown;
   publicState: unknown;
   version: number;
+  /** UI style the host picked, or null. */
+  theme: string | null;
 }
 
 export interface RoomSnapshot {
@@ -48,7 +50,7 @@ export function useRoom(roomId: string, userId: string) {
     const [roomRes, playersRes, privRes] = await Promise.all([
       sb
         .from("rooms")
-        .select("id, code, game_slug, status, settings, public_state, version")
+        .select("id, code, game_slug, status, settings, public_state, version, theme")
         .eq("id", roomId)
         .maybeSingle(),
       sb
@@ -87,6 +89,7 @@ export function useRoom(roomId: string, userId: string) {
         settings: r.settings,
         publicState: r.public_state,
         version: r.version,
+        theme: r.theme ?? null,
       },
       players,
       me: meRow ? players.find((p) => p.id === meRow.id)! : null,

@@ -6,7 +6,7 @@
  * We never key identity on IP: a whole party shares one Wi-Fi address.
  */
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { Spinner } from "@/components/Spinner";
+import { CenterMessage, Screen, Spinner } from "@/components/ui";
 import { browserSupabase } from "./supabase/browser";
 
 const UserIdContext = createContext<string | null>(null);
@@ -46,19 +46,20 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (error) {
     return (
-      <div className="grid min-h-dvh place-items-center p-6 text-center">
-        <div>
-          <p className="text-lg font-semibold">Couldn&apos;t connect</p>
-          <p className="text-muted mt-2">{error}</p>
-        </div>
-      </div>
+      <Screen kind="phone">
+        <CenterMessage title="Couldn't connect">
+          <p className="muted">{error}</p>
+        </CenterMessage>
+      </Screen>
     );
   }
   if (!userId) {
     return (
-      <div className="text-muted grid min-h-dvh place-items-center">
-        <Spinner />
-      </div>
+      <Screen kind="phone">
+        <div className="center-msg">
+          <Spinner />
+        </div>
+      </Screen>
     );
   }
   return <UserIdContext.Provider value={userId}>{children}</UserIdContext.Provider>;

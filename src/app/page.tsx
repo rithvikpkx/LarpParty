@@ -1,27 +1,38 @@
 import Link from "next/link";
+import { Art, Eyebrow, Screen, StyleButton } from "@/components/ui";
 import { games } from "@/games";
 
 export default function Home() {
   return (
-    <main className="mx-auto min-h-dvh max-w-5xl px-5 py-14 sm:py-24">
-      <h1 className="font-display text-5xl font-semibold tracking-tight sm:text-6xl">LarpParty</h1>
-      <p className="text-muted mt-4 max-w-xl text-xl">One big screen. Everyone&apos;s phones. No accounts, no apps.</p>
-      <ul className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+    <Screen kind="page" className="home" kanji="遊">
+      <div className="home-top">
+        <Eyebrow>Party games</Eyebrow>
+        <StyleButton />
+      </div>
+      <h1 className="disp">
+        <span className="hl">LarpParty</span>
+      </h1>
+      <p className="tag">One big screen. Everyone&apos;s phones. No accounts, no apps.</p>
+      <div className="games">
         {games.map((g) => (
-          <li key={g.slug}>
-            <Link
-              href={`/${g.slug}`}
-              className="group block h-full rounded-3xl bg-white p-7 shadow-[0_1px_3px_rgba(0,0,0,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(0,0,0,0.08)]"
-            >
-              <h2 className="text-2xl font-semibold">{g.name}</h2>
-              <p className="text-muted mt-2">{g.description}</p>
-              <p className="text-accent mt-6 text-sm font-medium">
-                {g.minPlayers}–{g.maxPlayers} players <span className="transition group-hover:translate-x-1">→</span>
-              </p>
-            </Link>
-          </li>
+          <Link
+            key={g.slug}
+            href={`/${g.slug}`}
+            className="panel game"
+            data-title={`${g.name}.exe`}
+            data-label={g.name.toUpperCase()}
+          >
+            <Art name={g.art ?? "moon"} />
+            <div>
+              <h2>{g.name}</h2>
+              <p>{g.description}</p>
+              <div className="meta">
+                {g.minPlayers}–{g.maxPlayers} players →
+              </div>
+            </div>
+          </Link>
         ))}
-      </ul>
-    </main>
+      </div>
+    </Screen>
   );
 }

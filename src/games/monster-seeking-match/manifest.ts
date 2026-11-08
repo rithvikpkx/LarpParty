@@ -5,6 +5,7 @@ export const monsterSeekingMatch: GameManifest<Settings, PublicState, PrivateSta
   slug: "monster-seeking-match",
   name: "Monster Seeking Match",
   description: "Secret monsters, private messages and dates with a bite.",
+  art: "ghost",
   minPlayers: 3,
   maxPlayers: 12,
   defaultSettings,

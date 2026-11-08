@@ -83,7 +83,9 @@ function next(s: State, now: number): State {
     };
   return {
     public: { ...p, phase: "texting", round: p.round + 1, deadline: now + 90000, locked: [], reveal: null },
-    private: Object.fromEntries(p.ids.map((id) => [id, { ...s.private[id], messages: [], sent: 0, choice: null, locked: false }])),
+    private: Object.fromEntries(
+      p.ids.map((id) => [id, { ...s.private[id], messages: [], sent: 0, choice: null, locked: false }]),
+    ),
   };
 }
 

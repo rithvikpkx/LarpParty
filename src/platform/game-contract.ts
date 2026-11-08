@@ -108,6 +108,8 @@ export interface GameManifest<Settings, Pub, Priv, Intent> {
   name: string;
   /** Shown on the home card. */
   description: string;
+  /** Art shown on the home card and game page (an id from src/components/ui Art, e.g. "wolf"). */
+  art?: import("@/components/ui").ArtName;
   /** Hard limits for the lobby. Settings may narrow these. */
   minPlayers: number;
   maxPlayers: number;

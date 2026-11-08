@@ -14,6 +14,7 @@
  * Next.js hides thrown error messages from the browser in production.
  */
 import { getGame } from "@/games";
+import { isStyleId } from "@/themes/registry";
 import { IllegalIntentError, type AnyGameManifest, type EnginePlayer, type GameState } from "./game-contract";
 import { adminSupabase } from "./supabase/admin";
 import { userSupabase } from "./supabase/server";
@@ -158,7 +159,11 @@ export async function getServerTime(): Promise<number> {
   return Date.now();
 }
 
-export async function createRoom(gameSlug: string, rawSettings: unknown): Promise<ActionResult<{ code: string }>> {
+export async function createRoom(
+  gameSlug: string,
+  rawSettings: unknown,
+  style?: string,
+): Promise<ActionResult<{ code: string }>> {
   return run(async () => {
     const userId = await requireUserId();
     const game = getGame(gameSlug);
@@ -177,7 +182,7 @@ export async function createRoom(gameSlug: string, rawSettings: unknown): Promis
       ).join("");
       const { data: room, error } = await db
         .from("rooms")
-        .insert({ code, game_slug: game.slug, settings })
+        .insert({ code, game_slug: game.slug, settings, theme: isStyleId(style) ? style : null })
         .select("id")
         .single();
       if (error?.code === "23505") continue; // code collision, pick another
@@ -250,6 +255,20 @@ export async function joinRoom(code: string, rawNickname: string): Promise<Actio
     if (error?.code === "23505") throw new ActionError("Someone already has that name.");
     if (error) throw new Error(error.message);
     return { playerId: data.id };
+  });
+}
+
+/** Host only: set the room's UI style. Phones that follow the host switch live via Realtime. */
+export async function setRoomTheme(code: string, style: string): Promise<ActionResult> {
+  return run(async () => {
+    if (!isStyleId(style)) throw new ActionError("Unknown style.");
+    const userId = await requireUserId();
+    const room = await loadRoom(code);
+    const players = await loadPlayers(room.id);
+    if (!requireMember(players, userId).is_host) throw new ActionError("Only the host can change the room's style.");
+    const { error } = await adminSupabase().from("rooms").update({ theme: style }).eq("id", room.id);
+    if (error) throw new Error(error.message);
+    return null;
   });
 }
 

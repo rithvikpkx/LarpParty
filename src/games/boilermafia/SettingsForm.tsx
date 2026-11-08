@@ -1,6 +1,6 @@
 "use client";
 
-import { Stepper } from "@/components/Stepper";
+import { Stepper } from "@/components/ui";
 import type { SettingsFormProps } from "@/platform/game-contract";
 import type { Settings } from "./types";
 
@@ -14,20 +14,23 @@ export function SettingsForm({ value, onChange }: SettingsFormProps<Settings>) {
   const specials = value.werewolves + value.doctors + value.seers;
 
   return (
-    <div className="divide-y divide-black/5">
-      <Section title="Players">
+    <div>
+      <section className="setting-group">
+        <span className="eyebrow">Players</span>
         <Stepper label="Minimum" value={value.minPlayers} min={3} max={20} onChange={(n) => set("minPlayers", n)} />
         <Stepper label="Maximum" value={value.maxPlayers} min={3} max={20} onChange={(n) => set("maxPlayers", n)} />
-      </Section>
-      <Section
-        title="Roles"
-        hint={`Everyone else is a Villager. ${specials} special role${specials === 1 ? "" : "s"}.`}
-      >
+      </section>
+      <section className="setting-group">
+        <span className="eyebrow">Roles</span>
+        <p className="muted" style={{ margin: "2px 0 4px", fontSize: ".86em" }}>
+          Everyone else is a Villager. {specials} special role{specials === 1 ? "" : "s"}.
+        </p>
         <Stepper label="Werewolves" value={value.werewolves} min={1} max={6} onChange={(n) => set("werewolves", n)} />
         <Stepper label="Doctors" value={value.doctors} min={0} max={3} onChange={(n) => set("doctors", n)} />
         <Stepper label="Seers" value={value.seers} min={0} max={3} onChange={(n) => set("seers", n)} />
-      </Section>
-      <Section title="Timers">
+      </section>
+      <section className="setting-group">
+        <span className="eyebrow">Timers</span>
         <Stepper
           label="Role reveal"
           value={value.revealSeconds}
@@ -55,17 +58,7 @@ export function SettingsForm({ value, onChange }: SettingsFormProps<Settings>) {
           suffix="s"
           onChange={(n) => set("daySeconds", n)}
         />
-      </Section>
+      </section>
     </div>
-  );
-}
-
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <section className="py-4 first:pt-0 last:pb-0">
-      <h3 className="text-muted text-xs font-semibold tracking-wider uppercase">{title}</h3>
-      {hint && <p className="text-muted mt-1 text-sm">{hint}</p>}
-      <div className="mt-1">{children}</div>
-    </section>
   );
 }

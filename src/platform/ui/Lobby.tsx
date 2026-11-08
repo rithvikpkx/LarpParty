@@ -2,8 +2,7 @@
 
 import { QRCodeSVG } from "qrcode.react";
 import { useState, useSyncExternalStore } from "react";
-import { Button } from "@/components/Button";
-import { Card } from "@/components/Card";
+import { Button, Eyebrow, Panel, PlayerTile, Screen, Toast, usePopIds } from "@/components/ui";
 import type { AnyGameManifest, RoomPlayer } from "../game-contract";
 import { kickPlayer, startGame } from "../actions";
 
@@ -32,8 +31,8 @@ export function HostLobby({
   const origin = useOrigin();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const joinUrl = `${origin}/${game.slug}/${code}`;
   const roster = players.filter((p) => !p.isHost);
+  const fresh = usePopIds(roster.map((p) => p.id));
   const parsed = game.engine.parseSettings(settings);
   const problem = game.engine.validateStart(roster.length, parsed);
   const { max } = game.playerLimits(parsed);
@@ -47,77 +46,74 @@ export function HostLobby({
   };
 
   return (
-    <main className="mx-auto grid min-h-dvh max-w-6xl items-center gap-10 px-6 py-10 lg:grid-cols-[1fr_1.1fr] lg:px-12">
-      <section className="text-center lg:text-left">
-        <p className="text-muted text-sm font-semibold tracking-[0.3em] uppercase">{game.name}</p>
-        <p className="text-muted mt-6 text-lg">Join at</p>
-        <p className="text-2xl font-semibold break-all">{origin.replace(/^https?:\/\//, "")}</p>
-        <p className="text-muted mt-6 text-lg">with code</p>
-        <p className="text-ink font-mono text-8xl font-bold tracking-[0.15em] lg:text-9xl">{code}</p>
-        <div className="mt-8 inline-block rounded-3xl bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-          {origin && <QRCodeSVG value={joinUrl} size={180} marginSize={0} fgColor="#1d1d1f" />}
+    <Screen kind="tv" className="lobby-scr" kanji="宴" pow>
+      <div className="lobby">
+        <div>
+          <Eyebrow>{game.name} · Lobby</Eyebrow>
+          <div className="join-at">
+            Join at <b>{origin.replace(/^https?:\/\//, "")}</b>
+          </div>
+          <div className="room-code disp" aria-label={`Room code ${code}`}>
+            {code.split("").map((c, i) => (
+              <span key={i}>{c}</span>
+            ))}
+          </div>
+          <div className="qr-wrap">
+            <div className="qr">
+              {origin && (
+                <QRCodeSVG
+                  value={`${origin}/${game.slug}/${code}`}
+                  marginSize={0}
+                  fgColor="currentColor"
+                  bgColor="transparent"
+                />
+              )}
+            </div>
+          </div>
         </div>
-      </section>
-
-      <section>
-        <Card className="p-8">
-          <div className="flex items-baseline justify-between">
-            <h2 className="text-2xl font-semibold">Players</h2>
-            <span className="text-muted tabular-nums">
+        <Panel label="PLAYERS" className="players">
+          <header>
+            <h2>Players</h2>
+            <span className="muted">
               {roster.length} / {max}
             </span>
+          </header>
+          <div className="tiles">
+            {roster.length === 0 && <p className="muted">Waiting for players to join…</p>}
+            {roster.map((p, i) => (
+              <PlayerTile
+                key={p.id}
+                name={p.nickname}
+                index={i}
+                pop={fresh.has(p.id)}
+                onRemove={() => void kickPlayer(code, p.id)}
+              />
+            ))}
           </div>
-          {roster.length === 0 ? (
-            <p className="text-muted mt-8 mb-4 text-center">Waiting for players to join…</p>
-          ) : (
-            <ul className="mt-6 grid grid-cols-2 gap-2">
-              {roster.map((p) => (
-                <li
-                  key={p.id}
-                  className="animate-rise group bg-canvas flex items-center justify-between rounded-2xl px-4 py-3"
-                >
-                  <span className="truncate text-lg font-medium">{p.nickname}</span>
-                  <button
-                    type="button"
-                    onClick={() => void kickPlayer(code, p.id)}
-                    className="text-muted ml-2 opacity-0 transition group-hover:opacity-100 focus:opacity-100"
-                    aria-label={`Remove ${p.nickname}`}
-                  >
-                    ✕
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <Button size="xl" className="mt-8 w-full" disabled={!!problem || busy} onClick={start}>
+          <Button wide disabled={!!problem || busy} onClick={start}>
             {busy ? "Starting…" : "Start game"}
           </Button>
-          <p className="text-muted mt-3 min-h-6 text-center text-sm">
-            {error ?? problem ?? "Everyone's here? Let's go."}
-          </p>
-        </Card>
-      </section>
-    </main>
+          <div className="start-hint">{problem ?? "Everyone in? Let's go."}</div>
+          {error && <Toast>{error}</Toast>}
+        </Panel>
+      </div>
+    </Screen>
   );
 }
 
 export function PlayerLobby({ game, me, players }: { game: AnyGameManifest; me: RoomPlayer; players: RoomPlayer[] }) {
   const roster = players.filter((p) => !p.isHost);
+  const fresh = usePopIds(roster.map((p) => p.id));
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col px-5 py-10">
-      <p className="text-muted text-sm font-semibold tracking-[0.3em] uppercase">{game.name}</p>
-      <h1 className="font-display mt-4 text-4xl font-semibold">You&apos;re in, {me.nickname}.</h1>
-      <p className="text-muted mt-2 text-lg">Watch the big screen. The host will start soon.</p>
-      <ul className="mt-10 grid gap-2">
-        {roster.map((p) => (
-          <li
-            key={p.id}
-            className={`animate-rise rounded-2xl px-5 py-4 text-lg font-medium ${p.id === me.id ? "bg-accent text-white" : "bg-white"}`}
-          >
-            {p.nickname}
-          </li>
+    <Screen kind="phone" className="home" kanji="宴">
+      <Eyebrow>{game.name}</Eyebrow>
+      <h1 className="disp">You&apos;re in, {me.nickname}.</h1>
+      <p className="tag">Watch the big screen. The host will start soon.</p>
+      <div className="tiles">
+        {roster.map((p, i) => (
+          <PlayerTile key={p.id} name={p.nickname} index={i} pop={fresh.has(p.id)} />
         ))}
-      </ul>
-    </main>
+      </div>
+    </Screen>
   );
 }
