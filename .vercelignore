@@ -1,6 +1,19 @@
+# Files Vercel never needs. Applies to CLI and Git deployments.
+
+# Local secrets and build output
 .env*
-!.env.example
 node_modules
 .next
-supabase/.temp
-supabase/.branches
+
+# Docs: AGENTS.md, README.md, game SPEC.md files, any other markdown
+*.md
+
+# Database migrations and Supabase CLI config (applied with the Supabase CLI, not by Vercel)
+/supabase/
+
+# Tests and dev tooling config
+*.test.ts
+*.test.tsx
+vitest.config.ts
+.prettierrc.json
+.prettierignore

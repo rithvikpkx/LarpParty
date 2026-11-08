@@ -177,7 +177,7 @@ Principles we actually follow: separation of concerns, spec-driven development, 
 - **Spec before code.** Every game starts with `SPEC.md`: phases, roles, intents, win conditions, settings, and edge cases (disconnects, ties, min players). The agent should refuse to write an engine without one.
 - **TDD for engines only.** Write the failing engine test, then make it pass. UI components do not need unit tests. Playwright end-to-end tests for the join flow come after the MVP.
 - **Lint and format** with ESLint and Prettier on save and in CI.
-- **Branches and PRs.** Branch from `main`, open a PR, at least one teammate reviews, Vercel preview deploy must build. Squash merge.
+- **Branches and PRs.** Branch from `main`, open a PR, Vercel preview deploy must build. Squash merge.
 - **Commit messages** are short imperative sentences, optionally prefixed with the area: `platform:`, `boilermafia:`, `repo:`.
 - **Secrets** live in `.env.local` and Vercel project settings, never in git. The Supabase service role key is server-only.
 - **Design** is minimal and Apple-leaning: generous whitespace, one accent color, system font stack, large touch targets on phone views, subtle motion.
