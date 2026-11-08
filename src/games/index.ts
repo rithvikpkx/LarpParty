@@ -4,8 +4,9 @@
  */
 import type { AnyGameManifest } from "@/platform/game-contract";
 import { boilermafia } from "./boilermafia/manifest";
+import { monsterSeekingMatch } from "./monster-seeking-match/manifest";
 
-export const games: AnyGameManifest[] = [boilermafia];
+export const games: AnyGameManifest[] = [boilermafia, monsterSeekingMatch];
 
 export function getGame(slug: string): AnyGameManifest | undefined {
   return games.find((g) => g.slug === slug);
