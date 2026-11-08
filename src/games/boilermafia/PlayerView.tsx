@@ -2,7 +2,7 @@
 
 /** Each phone: this player's private role and whatever they can do right now. */
 import { useState } from "react";
-import { Art, Button, Eyebrow, Notice, Panel, PickList, Screen, StyleButton, Timer, Toast } from "@/components/ui";
+import { Art, Button, Eyebrow, Notice, Panel, PickList, Screen, Timer, Toast } from "@/components/ui";
 import type { GameViewProps } from "@/platform/game-contract";
 import { PHASE_TITLE, ROLE_LABEL } from "./narration";
 import { article, ROLE_ART, ROLE_BLURB } from "./roles";
@@ -58,7 +58,6 @@ export function PlayerView({ me, players, publicState: pub, privateState: priv, 
               {showRole ? ROLE_LABEL[role] : "Role"}
             </button>
           )}
-          <StyleButton />
         </div>
       </div>
 

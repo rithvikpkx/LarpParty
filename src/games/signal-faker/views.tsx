@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Eyebrow, Screen, StyleButton, Timer } from "@/components/ui";
+import { Eyebrow, Screen, Timer } from "@/components/ui";
 import type { GameViewProps, SettingsFormProps } from "@/platform/game-contract";
 import type { Intent, PrivateState, PublicState, Settings } from "./engine";
 
@@ -199,7 +199,6 @@ export function HostView({ roomCode, players, publicState: p, dispatch, serverNo
           </p>
         )}
         <div className="flex justify-center gap-3 text-center">
-          <StyleButton />
           {p.phase === "over" ? (
             playAgain && (
               <button className={button} onClick={() => void playAgain()}>
@@ -249,7 +248,6 @@ export function PlayerView({ me, players, publicState: p, privateState: secret, 
           </span>
           <span>
             {p.phase} {p.deadline && <Timer deadline={p.deadline} now={serverNow} className="timer-sm" />}{" "}
-            <StyleButton />
           </span>
         </header>
         {p.phase === "action" && (

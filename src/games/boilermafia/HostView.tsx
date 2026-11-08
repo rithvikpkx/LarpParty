@@ -2,19 +2,7 @@
 
 /** The big screen. Narrator only: it shows public state, and roles only once they are revealed. */
 import { useState } from "react";
-import {
-  Art,
-  Button,
-  Eyebrow,
-  Narration,
-  Panel,
-  PickList,
-  Screen,
-  StyleButton,
-  Timer,
-  Toast,
-  type ArtName,
-} from "@/components/ui";
+import { Art, Button, Eyebrow, Narration, Panel, PickList, Screen, Timer, Toast, type ArtName } from "@/components/ui";
 import type { GameViewProps } from "@/platform/game-contract";
 import { narrate, PHASE_TITLE, ROLE_LABEL } from "./narration";
 import { ROLE_ART } from "./roles";
@@ -88,7 +76,6 @@ export function HostView({ roomCode, players, publicState: pub, dispatch, server
       {pub.phase === "verdict" && pub.lastVerdict && <TallyBoard tally={pub.lastVerdict.tally} nameOf={nameOf} />}
 
       <div className="stage-foot">
-        <StyleButton />
         <div className="strip">
           {pub.playerIds.map((id) => {
             const alive = pub.alive.includes(id);
@@ -185,10 +172,7 @@ function Winner({
           );
         })}
       </div>
-      <div className="actions">
-        {playAgain && <Button onClick={() => void playAgain()}>Play again</Button>}
-        <StyleButton />
-      </div>
+      <div className="actions">{playAgain && <Button onClick={() => void playAgain()}>Play again</Button>}</div>
     </Screen>
   );
 }

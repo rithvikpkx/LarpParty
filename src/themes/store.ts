@@ -18,7 +18,7 @@ export interface RoomStyle {
   code: string;
   style: string | null;
   isHost: boolean;
-  /** True once the game has started: the floating style button hides so it never covers game controls. */
+  /** True once the game has started. */
   playing: boolean;
 }
 

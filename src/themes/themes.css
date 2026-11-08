@@ -17,17 +17,19 @@
   font-family: var(--font-b); font-size: calc(var(--u) * 16); line-height: 1.35;
   display: flex; flex-direction: column;
   padding: calc(var(--u) * 40) max(calc(var(--u) * 20), env(safe-area-inset-right, 0px)) calc(var(--u) * 40) max(calc(var(--u) * 20), env(safe-area-inset-left, 0px));
+  padding-bottom: max(calc(var(--u) * 40), calc(68px + env(safe-area-inset-bottom, 0px)));
   -webkit-font-smoothing: antialiased;
 }
 .scr.tv {
   --u: min(calc(100vw / 1280), calc(100dvh / 720));
   height: 100dvh; overflow: hidden; font-size: calc(var(--u) * 22);
   padding: calc(var(--u) * 48) calc(var(--u) * 64);
+  padding-bottom: max(calc(var(--u) * 48), 64px);
 }
 .scr.phone {
   --u: clamp(0.9px, calc(100vw / 390), 1.15px);
   font-size: calc(var(--u) * 15);
-  padding: max(calc(var(--u) * 28), env(safe-area-inset-top, 0px)) calc(var(--u) * 20) max(calc(var(--u) * 24), env(safe-area-inset-bottom, 0px));
+  padding: max(calc(var(--u) * 28), env(safe-area-inset-top, 0px)) calc(var(--u) * 20) calc(64px + env(safe-area-inset-bottom, 0px));
 }
 .scr > .col { position: relative; z-index: 1; flex: 1; display: flex; flex-direction: column; width: 100%; margin: 0 auto; min-width: 0; }
 .scr.tv > .col { max-width: calc(var(--u) * 1152); }

@@ -7,7 +7,7 @@
  */
 import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { ASCII_ART } from "@/themes/ascii";
-import { theme, useTheme } from "@/themes/store";
+import { useTheme } from "@/themes/store";
 import { Rain } from "./Rain";
 
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
@@ -435,16 +435,4 @@ export function usePopIds(ids: string[]): Set<string> {
     }
   }, [ids]);
   return fresh;
-}
-
-// ---------------------------------------------------------------------------
-// Style button: opens the global style picker
-// ---------------------------------------------------------------------------
-
-export function StyleButton({ className }: { className?: string }) {
-  return (
-    <button type="button" className={cx("btn ghost sm", className)} onClick={() => theme.openPicker()}>
-      Style
-    </button>
-  );
 }

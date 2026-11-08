@@ -72,11 +72,9 @@ export function StylePicker() {
     }
   };
 
-  const showFab = !(room && room.playing);
-
   return (
     <>
-      {showFab && !t.pickerOpen && (
+      {!t.pickerOpen && (
         <button type="button" className="style-fab" onClick={() => theme.openPicker()} aria-haspopup="dialog">
           <i aria-hidden="true" />
           Style
