@@ -9,6 +9,7 @@ export const boilermafia: GameManifest<Settings, PublicState, PrivateState, Inte
   slug: "boilermafia",
   name: "BoilerMafia",
   description: "Werewolves hide among the villagers. Lie, deduce and vote before the village falls.",
+  art: "wolf",
   minPlayers: 3,
   maxPlayers: 20,
   defaultSettings,

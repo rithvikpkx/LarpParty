@@ -1,145 +1,125 @@
 "use client";
 
-/** The big screen. Narrator only: it shows public state and never any roles until they are revealed. */
+/** The big screen. Narrator only: it shows public state, and roles only once they are revealed. */
 import { useState } from "react";
-import { Button } from "@/components/Button";
-import { Countdown } from "@/components/Countdown";
+import { Art, Button, Eyebrow, Narration, Panel, PickList, Screen, Timer, Toast, type ArtName } from "@/components/ui";
 import type { GameViewProps } from "@/platform/game-contract";
 import { narrate, PHASE_TITLE, ROLE_LABEL } from "./narration";
+import { ROLE_ART } from "./roles";
 import type { Intent, PrivateState, PublicState, VoteTarget } from "./types";
-import { Narration, ROLE_STYLE } from "./ui";
 
 type Props = GameViewProps<PublicState, PrivateState, Intent>;
 
-const BACKDROP: Record<PublicState["phase"], string> = {
-  reveal: "from-[#10132a] to-night",
-  night: "from-[#070914] to-[#020308]",
-  dawn: "from-[#3a2a4a] via-[#2a1f3a] to-night",
-  day: "from-[#2b3a5c] via-[#1c2540] to-night",
-  verdict: "from-[#3a1a22] via-[#1f1420] to-night",
-  over: "from-[#1d1b3a] to-night",
+const KANJI: Record<PublicState["phase"], string> = {
+  reveal: "宴",
+  night: "夜",
+  dawn: "朝",
+  day: "昼",
+  verdict: "決",
+  over: "勝",
+};
+const PHASE_ART: Record<PublicState["phase"], ArtName> = {
+  reveal: "crescent",
+  night: "moon",
+  dawn: "sun",
+  day: "sun",
+  verdict: "skull",
+  over: "trophy",
 };
 
 export function HostView({ roomCode, players, publicState: pub, dispatch, serverNow, playAgain }: Props) {
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const nameOf = (id: string) => players.find((p) => p.id === id)?.nickname ?? "Someone";
-  const lines = narrate(pub, nameOf);
 
   const advance = async () => {
     setBusy(true);
-    await dispatch({ type: "advance" });
+    const res = await dispatch({ type: "advance" });
     setBusy(false);
+    setError(res.ok ? null : (res.error ?? "Couldn't advance."));
   };
 
-  const advanceLabel: Record<PublicState["phase"], string> = {
+  if (pub.phase === "over") return <Winner pub={pub} nameOf={nameOf} playAgain={playAgain} />;
+
+  const dark = pub.phase === "reveal" || pub.phase === "night";
+  const advanceLabel: Record<Exclude<PublicState["phase"], "over">, string> = {
     reveal: "Begin the night",
     night: "End the night",
     dawn: pub.winner ? "Reveal the winner" : "Start the day",
     day: "End voting",
     verdict: pub.winner ? "Reveal the winner" : "Next night",
-    over: "",
   };
 
   return (
-    <main
-      className={`relative flex min-h-dvh flex-col bg-gradient-to-b ${BACKDROP[pub.phase]} text-white transition-colors duration-1000`}
+    <Screen
+      kind="tv"
+      className={dark ? "stage is-night" : "stage"}
+      kanji={KANJI[pub.phase]}
+      rain={pub.phase === "night"}
     >
-      <header className="flex items-center justify-between px-8 pt-6 text-white/60 lg:px-14 lg:pt-10">
-        <div className="text-sm font-medium tracking-wide">
-          BoilerMafia · Room <span className="font-semibold text-white/90">{roomCode}</span>
-        </div>
-        <div className="text-sm font-medium">{pub.round > 0 && pub.phase !== "over" ? `Round ${pub.round}` : ""}</div>
-      </header>
+      <div className="stage-top">
+        <Eyebrow>
+          {PHASE_TITLE[pub.phase]}
+          {pub.round > 0 ? ` · Round ${pub.round}` : ""}
+        </Eyebrow>
+        <Eyebrow>Room {roomCode}</Eyebrow>
+      </div>
 
-      <section className="flex flex-1 flex-col items-center justify-center px-8 text-center lg:px-14">
-        <p className="text-sm font-semibold tracking-[0.3em] text-white/50 uppercase">{PHASE_TITLE[pub.phase]}</p>
-        {pub.deadline !== null && pub.phase !== "over" && (
-          <Countdown
-            deadline={pub.deadline}
-            now={serverNow}
-            className="font-display mt-3 text-6xl font-semibold lg:text-7xl"
-          />
-        )}
-        <Narration
-          key={`${pub.phase}-${pub.round}`}
-          lines={lines}
-          className="font-display mt-10 max-w-4xl text-3xl leading-snug font-medium text-white lg:text-5xl"
-        />
-      </section>
+      <div className="stage-mid">
+        <Art name={PHASE_ART[pub.phase]} className="moon" />
+        <Timer deadline={pub.deadline} now={serverNow} />
+      </div>
+
+      <Narration key={`${pub.phase}-${pub.round}`} lines={narrate(pub, nameOf)} />
 
       {pub.phase === "day" && <VoteBoard pub={pub} nameOf={nameOf} />}
       {pub.phase === "verdict" && pub.lastVerdict && <TallyBoard tally={pub.lastVerdict.tally} nameOf={nameOf} />}
-      {pub.phase === "over" && <RoleReveal pub={pub} nameOf={nameOf} />}
 
-      <footer className="flex flex-wrap items-end justify-between gap-6 px-8 pb-8 lg:px-14 lg:pb-10">
-        <PlayerStrip pub={pub} nameOf={nameOf} />
-        <div className="flex gap-3">
-          {pub.phase === "over" ? (
-            playAgain && (
-              <Button size="xl" onClick={() => void playAgain()}>
-                Play again
-              </Button>
-            )
-          ) : (
-            <Button
-              size="lg"
-              variant="secondary"
-              className="!bg-white/10 !text-white hover:!bg-white/20"
-              disabled={busy}
-              onClick={advance}
-            >
-              {advanceLabel[pub.phase]} →
-            </Button>
-          )}
+      <div className="stage-foot">
+        <div className="strip">
+          {pub.playerIds.map((id) => {
+            const alive = pub.alive.includes(id);
+            const role = pub.revealedRoles[id];
+            const ready = pub.phase === "reveal" && pub.ready.includes(id);
+            return (
+              <span key={id} className={["chip", !alive && "dead", ready && "ok"].filter(Boolean).join(" ")}>
+                {nameOf(id)}
+                {!alive && role ? ` · ${ROLE_LABEL[role]}` : ""}
+              </span>
+            );
+          })}
         </div>
-      </footer>
-    </main>
-  );
-}
-
-function PlayerStrip({ pub, nameOf }: { pub: PublicState; nameOf: (id: string) => string }) {
-  return (
-    <ul className="flex max-w-4xl flex-wrap gap-2">
-      {pub.playerIds.map((id) => {
-        const alive = pub.alive.includes(id);
-        const role = pub.revealedRoles[id];
-        const ready = pub.phase === "reveal" && pub.ready.includes(id);
-        return (
-          <li
-            key={id}
-            className={`flex items-center gap-2 rounded-full px-4 py-2 text-base font-medium transition ${
-              alive ? "bg-white/10 text-white" : "bg-white/5 text-white/40 line-through"
-            }`}
-          >
-            {!alive && role && <span aria-hidden>{ROLE_STYLE[role].emoji}</span>}
-            {nameOf(id)}
-            {ready && <span className="text-emerald-300">✓</span>}
-          </li>
-        );
-      })}
-    </ul>
+        <Button variant="ghost" disabled={busy} onClick={advance}>
+          {advanceLabel[pub.phase]} →
+        </Button>
+      </div>
+      {error && <Toast>{error}</Toast>}
+    </Screen>
   );
 }
 
 function VoteBoard({ pub, nameOf }: { pub: PublicState; nameOf: (id: string) => string }) {
   const voted = pub.alive.filter((id) => pub.votes[id] !== undefined).length;
-  const counts: Record<string, string[]> = {};
-  for (const [voter, target] of Object.entries(pub.votes)) (counts[target] ??= []).push(nameOf(voter));
-  const rows = Object.entries(counts).sort((a, b) => b[1].length - a[1].length);
+  const counts = new Map<string, string[]>();
+  for (const [voter, target] of Object.entries(pub.votes))
+    counts.set(target, [...(counts.get(target) ?? []), nameOf(voter)]);
+  const rows = [...counts.entries()].sort((a, b) => b[1].length - a[1].length);
+  const max = Math.max(1, ...rows.map(([, v]) => v.length));
   return (
-    <section className="mx-auto mb-6 w-full max-w-4xl px-8">
-      <p className="mb-3 text-center text-white/60">
+    <div className="board">
+      <p className="muted" style={{ margin: 0 }}>
         {voted} of {pub.alive.length} voted
       </p>
-      <ul className="grid gap-2 sm:grid-cols-2">
-        {rows.map(([target, voters]) => (
-          <li key={target} className="animate-rise flex items-center justify-between rounded-2xl bg-white/8 px-5 py-3">
-            <span className="text-xl font-semibold">{target === "skip" ? "Skip" : nameOf(target)}</span>
-            <span className="text-sm text-white/60">{voters.join(", ")}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
+      <PickList
+        selected={null}
+        options={rows.map(([target, voters]) => ({
+          id: target,
+          label: target === "skip" ? "Skip" : nameOf(target),
+          detail: voters.join(", "),
+          share: voters.length / max,
+        }))}
+      />
+    </div>
   );
 }
 
@@ -148,40 +128,51 @@ function TallyBoard({ tally, nameOf }: { tally: Record<VoteTarget, number>; name
   if (rows.length === 0) return null;
   const max = rows[0][1];
   return (
-    <section className="mx-auto mb-6 w-full max-w-3xl space-y-2 px-8">
-      {rows.map(([target, n]) => (
-        <div key={target} className="flex items-center gap-4">
-          <span className="w-40 truncate text-right text-lg">{target === "skip" ? "Skip" : nameOf(target)}</span>
-          <div className="h-8 flex-1 overflow-hidden rounded-full bg-white/5">
-            <div className="animate-fade bg-blood/70 h-full rounded-full" style={{ width: `${(n / max) * 100}%` }} />
-          </div>
-          <span className="w-8 text-lg font-semibold tabular-nums">{n}</span>
-        </div>
-      ))}
-    </section>
+    <div className="board">
+      <PickList
+        selected={null}
+        options={rows.map(([target, n]) => ({
+          id: target,
+          label: target === "skip" ? "Skip" : nameOf(target),
+          detail: `${n} vote${n === 1 ? "" : "s"}`,
+          share: n / max,
+        }))}
+      />
+    </div>
   );
 }
 
-function RoleReveal({ pub, nameOf }: { pub: PublicState; nameOf: (id: string) => string }) {
+function Winner({
+  pub,
+  nameOf,
+  playAgain,
+}: {
+  pub: PublicState;
+  nameOf: (id: string) => string;
+  playAgain?: () => Promise<void>;
+}) {
+  const lines = narrate(pub, nameOf);
   return (
-    <section className="mx-auto mb-8 grid w-full max-w-5xl grid-cols-2 gap-3 px-8 sm:grid-cols-3 lg:grid-cols-4">
-      {pub.playerIds.map((id, i) => {
-        const role = pub.revealedRoles[id];
-        const winnerTeam = pub.winner === "werewolves" ? role === "werewolf" : role !== "werewolf";
-        return (
-          <div
-            key={id}
-            style={{ animationDelay: `${i * 80}ms` }}
-            className={`animate-rise rounded-2xl p-4 ring-1 ${winnerTeam ? "bg-white/12 ring-white/30" : "bg-white/5 ring-white/10"}`}
-          >
-            <div className="text-3xl">{role ? ROLE_STYLE[role].emoji : "?"}</div>
-            <div className={`mt-2 text-lg font-semibold ${pub.alive.includes(id) ? "" : "text-white/50 line-through"}`}>
-              {nameOf(id)}
-            </div>
-            <div className="text-sm text-white/60">{role ? ROLE_LABEL[role] : ""}</div>
-          </div>
-        );
-      })}
-    </section>
+    <Screen kind="tv" className="win" kanji="勝" pow>
+      <Art name="trophy" className="trophy" />
+      <Eyebrow>Game over · {pub.round} rounds</Eyebrow>
+      <h1 className="disp">
+        <span className="hl">{lines[lines.length - 1]}</span>
+      </h1>
+      <div className="roles">
+        {pub.playerIds.map((id) => {
+          const role = pub.revealedRoles[id];
+          const onWinningTeam = pub.winner === "werewolves" ? role === "werewolf" : role !== "werewolf";
+          return (
+            <Panel key={id} className={onWinningTeam ? "rc" : "rc lost"}>
+              {role && <Art name={ROLE_ART[role]} />}
+              <b>{nameOf(id)}</b>
+              <span>{role ? ROLE_LABEL[role] : ""}</span>
+            </Panel>
+          );
+        })}
+      </div>
+      <div className="actions">{playAgain && <Button onClick={() => void playAgain()}>Play again</Button>}</div>
+    </Screen>
   );
 }

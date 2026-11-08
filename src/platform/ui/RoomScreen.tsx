@@ -8,10 +8,8 @@
  */
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "@/components/Button";
-import { Card } from "@/components/Card";
-import { Spinner } from "@/components/Spinner";
-import { TextField } from "@/components/TextField";
+import { Button, CenterMessage, Panel, Screen, Spinner, Toast } from "@/components/ui";
+import { theme } from "@/themes/store";
 import { getGame } from "@/games";
 import { getRoomPreview, joinRoom, returnToLobby, sendIntent, tickRoom, type RoomPreview } from "../actions";
 import { AuthGate, useUserId } from "../auth";
@@ -99,8 +97,18 @@ function LiveRoom({
     if (snapshot && !me) onRemoved();
   }, [snapshot, me, onRemoved]);
 
+  // Follow the room's style (the host's pick). Phones may override from the style picker.
+  const roomTheme = snapshot?.room.theme ?? null;
+  const isHost = me?.isHost ?? false;
+  const playing = !!status && status !== "lobby";
+  useEffect(() => {
+    if (!snapshot) return;
+    theme.setRoom({ code, style: roomTheme, isHost, playing });
+  }, [snapshot, code, roomTheme, isHost, playing]);
+  useEffect(() => () => theme.setRoom(null), []);
+
   if (!snapshot || !me) {
-    return <Centered>{error ? <p className="text-muted">Reconnecting… ({error})</p> : <Spinner />}</Centered>;
+    return <Centered>{error ? <p className="muted">Reconnecting… ({error})</p> : <Spinner />}</Centered>;
   }
 
   const { room, players } = snapshot;
@@ -189,45 +197,55 @@ function JoinForm({ game, code, onJoined }: { game: AnyGameManifest; code: strin
   };
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-5 py-10">
-      <p className="text-muted text-sm font-semibold tracking-[0.3em] uppercase">{game.name}</p>
-      <h1 className="font-display mt-3 text-4xl font-semibold">
-        Join room <span className="font-mono tracking-widest">{code}</span>
-      </h1>
-      <Card className="mt-8">
-        <form onSubmit={submit} className="grid gap-5">
-          <TextField
-            label="Your name"
-            value={nickname}
-            onChange={(e) => setNickname(e.target.value.slice(0, 16))}
-            placeholder="Dash"
-            autoFocus
-            autoComplete="nickname"
-            enterKeyHint="go"
-          />
-          <Button size="xl" type="submit" disabled={busy || nickname.trim().length === 0}>
+    <Screen kind="phone" className="join" kanji="入">
+      <div className="join-hero">
+        <div>
+          <div className="eyebrow">{game.name}</div>
+          <h1 className="disp">
+            Join room <span style={{ letterSpacing: ".08em" }}>{code}</span>
+          </h1>
+        </div>
+      </div>
+      <form onSubmit={submit}>
+        <Panel label="JOIN" className="stack">
+          <label className="label">
+            Your name
+            <input
+              className="field"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value.slice(0, 16))}
+              placeholder="Dash"
+              autoFocus
+              autoComplete="nickname"
+              enterKeyHint="go"
+            />
+          </label>
+          <Button type="submit" wide disabled={busy || nickname.trim().length === 0}>
             {busy ? "Joining…" : "Join"}
           </Button>
-          {error && <p className="text-blood text-center">{error}</p>}
-        </form>
-      </Card>
-    </main>
+          {error && <Toast>{error}</Toast>}
+        </Panel>
+      </form>
+    </Screen>
   );
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
-  return <div className="text-muted grid min-h-dvh place-items-center p-6">{children}</div>;
+  return (
+    <Screen kind="phone">
+      <div className="center-msg">{children}</div>
+    </Screen>
+  );
 }
 
 function Message({ title, slug }: { title: string; slug: string }) {
   return (
-    <Centered>
-      <div className="text-center">
-        <p className="text-ink text-2xl font-semibold">{title}</p>
-        <Link href={`/${slug}`} className="text-accent mt-4 inline-block font-medium">
+    <Screen kind="phone">
+      <CenterMessage title={title}>
+        <Link href={`/${slug}`} className="back" style={{ display: "inline-block", marginTop: 16 }}>
           Back
         </Link>
-      </div>
-    </Centered>
+      </CenterMessage>
+    </Screen>
   );
 }

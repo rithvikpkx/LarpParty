@@ -146,6 +146,23 @@ Rules for a game folder:
 - Views receive state and a `dispatch(intent)` function from platform hooks. They never call Supabase directly.
 - Each game has a `SPEC.md` written before code (see Engineering standards).
 - A game folder may contain anything else it needs: assets, narration scripts, sub-components.
+- **Views must be built from `@/components/ui` and the theme classes, never hard-coded colours.** See UI styles below. A view with `bg-indigo-950` or `text-white` won't change when the user picks a style.
+
+### UI styles (themes)
+
+The site has 18 switchable styles (Liquid Glass, Comic Pop, Neo-Brutalist, Tide Pool, Claymation, ASCII Terminal, Desktop 98, Neon Arcade, Pixel Retro, Paper Sketch, Sakura, Noir, Storybook, The Daily Village, Game Show, Tabletop, Blueprint, Black & Gold). The interactive mockup they came from is the "LarpParty Style Lab" artifact.
+
+How it works:
+
+- `<html data-style="...">` picks the style. An inline script in `src/app/layout.tsx` sets it before first paint, from localStorage, so there is no flash.
+- `src/themes/themes.css` holds the screen system plus one token block per style. Components only read tokens (`--bg --fg --muted --panel --line --accent --accent-fg --field --r --shadow --font-d --font-b ...`) through shared classes: `.scr .col .panel .btn .chip .pick .tile .eyebrow .disp .art .timer .narr .room-code .code-boxes .field .notice`.
+- `src/themes/registry.ts` lists the styles and the Google Fonts each needs. Only the active style's fonts are downloaded.
+- `src/themes/store.ts` decides the active style: the host's pick for the room (`rooms.theme`, set with the `setRoomTheme` server action) is what the TV shows and what phones follow by default. A phone can pick its own from the style picker and later tap "Match the host". Outside rooms, each device uses its own last pick. Default: Black & Gold.
+- Screens wrap content in `<Screen kind="tv|phone|page">`. TV screens are designed at 1280×720 and scale to fit; phones at 390 wide. Sizes use `calc(var(--u) * N)` where N is design pixels.
+- Add `is-night` to a screen's className for the dark palette (night phases); every style defines one.
+- Art comes from `<Art name="wolf" />`, which shows a Fluent Emoji image, a pixel sprite (Pixel Retro, Desktop 98) or ASCII art (Terminal) depending on the style. New art: add `public/art/<name>.webp` (192px), `public/art/pixel/<name>.png` (24px) and an ASCII entry in `src/themes/ascii.ts`.
+
+Performance rules for styles: animate only `transform` and `opacity`; no Lottie on phones; per-screen decorations are cheap static CSS; `html.lite` (the "Reduce effects" toggle, or devices with ≤2GB memory) turns off moving decorations and blur. Liquid Glass refraction runs only on the host TV in Chromium.
 
 ### Repo layout
 
@@ -163,7 +180,8 @@ src/
       HostView.tsx
       PlayerView.tsx
       SettingsForm.tsx
-  components/           Shared design-system primitives (Button, Card, Timer). Anyone may add; keep them generic.
+  components/ui/        Themed primitives: Screen, Panel, Button, PickList, Timer, Narration, Art, CodeInput, Stepper, StylePicker.
+  themes/               Style registry, themes.css, the style store, ASCII art.
 supabase/
   migrations/           SQL migrations, numbered. Written by Rithvik.
   seed.sql
@@ -180,7 +198,7 @@ Principles we actually follow: separation of concerns, spec-driven development, 
 - **Branches and PRs.** Branch from `main`, open a PR, Vercel preview deploy must build. Squash merge.
 - **Commit messages** are short imperative sentences, optionally prefixed with the area: `platform:`, `boilermafia:`, `repo:`.
 - **Secrets** live in `.env.local` and Vercel project settings, never in git. The Supabase service role key is server-only.
-- **Design** is minimal and Apple-leaning: generous whitespace, one accent color, system font stack, large touch targets on phone views, subtle motion.
+- **Design**: users choose one of 18 styles (see UI styles). Whatever the style: large touch targets (44px+) on phone views, motion only on transform and opacity, readable contrast in both day and night palettes.
 
 ## Learning contract between humans and agents
 
@@ -318,6 +336,7 @@ Dynamic Course Syllabi: Extract topics, assignment names, compiler flags, and la
 - DNS: subdomain pointed at Vercel versus `basePath` under `rithvik.si`.
 - Whether the Host device is also a player. Decided for MVP: the Host is a narrator-only screen with an `is_host` player row. A manifest may opt into host-as-player later.
 - Narration delivery: on-screen text for MVP. Text-to-speech is a Phase 2 candidate.
+- Fonts load from Google Fonts per style (one stylesheet request when a style is first used). If we ever need offline or stricter privacy, self-host them with `next/font`.
 - Keep-alive strategy for the Supabase free-tier pause.
 - Supabase project ownership. Rithvik's account is at the 2-active-free-project cap, so the `larpparty` project is owned by a teammate's account, with Rithvik invited as a member.
 - Anonymous sign-in rate limit is per IP, and a whole party shares one IP. `supabase/config.toml` raises it to 200 an hour. Check the hosted project's Auth rate limits match.
