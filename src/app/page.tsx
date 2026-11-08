@@ -1,14 +1,11 @@
 import Link from "next/link";
-import { Art, Eyebrow, Screen, StyleButton } from "@/components/ui";
+import { Art, Eyebrow, Screen } from "@/components/ui";
 import { games } from "@/games";
 
 export default function Home() {
   return (
     <Screen kind="page" className="home" kanji="遊">
-      <div className="home-top">
-        <Eyebrow>Party games</Eyebrow>
-        <StyleButton />
-      </div>
+      <Eyebrow>Party games</Eyebrow>
       <h1 className="disp">
         <span className="hl">LarpParty</span>
       </h1>
