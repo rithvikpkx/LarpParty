@@ -52,4 +52,22 @@ describe("Monster Seeking Match", () => {
     expect(() => engine.reduce(state, { type: "ready" }, { ...actor("a"), now: 31000 })).toThrow();
     expect(engine.tick!(state, { ...clock, now: 31000 }).public.phase).toBe("texting");
   });
+  it("reveals each current-round message once and every date choice after dating", () => {
+    let state = engine.init(players, defaultSettings, clock);
+    state = engine.reduce(state, { type: "advance" }, host);
+    state = engine.reduce(state, { type: "message", target: "b", text: "Meet me" }, actor("a"));
+    expect(state.public.reveal).toBeNull();
+    state = engine.reduce(state, { type: "advance" }, host);
+    state = engine.reduce(state, { type: "choose", target: "b" }, actor("a"));
+    state = engine.reduce(state, { type: "lock" }, actor("a"));
+    state = engine.reduce(state, { type: "advance" }, host);
+    expect(state.public.reveal?.messages).toHaveLength(1);
+    expect(state.public.reveal?.choices).toEqual({ a: "b", b: null, c: null, d: null });
+    expect(state.public.reveal?.order[0]).toBe("a");
+    expect(state.public.deadline).toBe(1000 + (1 + 4) * 5000 + 12000);
+    state = engine.reduce(state, { type: "advance" }, host);
+    expect(state.public.reveal).toBeNull();
+    expect(state.private.a.messages).toHaveLength(0);
+    expect(state.private.b.messages).toHaveLength(0);
+  });
 });

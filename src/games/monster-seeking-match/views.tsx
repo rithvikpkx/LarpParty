@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Countdown } from "@/components/Countdown";
 import type { GameViewProps, SettingsFormProps } from "@/platform/game-contract";
 import type { Intent, PrivateState, PublicState, Settings } from "./engine";
@@ -9,20 +9,26 @@ const button = "rounded-2xl bg-fuchsia-600 px-5 py-3 font-semibold text-white di
 const card = "rounded-3xl bg-white/10 p-5";
 export function SettingsForm({ value, onChange }: SettingsFormProps<Settings>) {
   return (
-    <label className="flex items-center justify-between">
-      Rounds{" "}
-      <select
-        className="rounded-xl border p-3"
-        value={value.rounds}
-        onChange={(e) => onChange({ rounds: Number(e.target.value) })}
-      >
-        {[3, 4, 5, 6, 7, 8].map((n) => (
-          <option key={n} value={n}>
-            {n} rounds
-          </option>
-        ))}
-      </select>
-    </label>
+    <div>
+      <p className="mb-4 text-sm text-black/60">
+        Messages are private during texting, then all messages and date choices are shown to everyone during the
+        results.
+      </p>
+      <label className="flex items-center justify-between">
+        Rounds{" "}
+        <select
+          className="rounded-xl border p-3"
+          value={value.rounds}
+          onChange={(e) => onChange({ rounds: Number(e.target.value) })}
+        >
+          {[3, 4, 5, 6, 7, 8].map((n) => (
+            <option key={n} value={n}>
+              {n} rounds
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
   );
 }
 export function HostView({ roomCode, players, publicState: p, dispatch, serverNow, playAgain }: Props) {
@@ -37,6 +43,23 @@ export function HostView({ roomCode, players, publicState: p, dispatch, serverNo
             Round {p.round} / {p.rounds}
           </span>
         </header>
+        <div className="relative overflow-hidden rounded-[2rem] border border-fuchsia-200/15 bg-gradient-to-b from-indigo-900/70 to-slate-950 p-5 text-center shadow-2xl">
+          <div aria-hidden="true" className="text-5xl">
+            🌙　☁️　🏚️　☁️　🦇
+          </div>
+          <p className="mt-2 text-xs tracking-[0.3em] text-pink-200 uppercase">Welcome to Heartbreak Manor</p>
+          <div className="mt-4 flex flex-wrap justify-center gap-3">
+            {p.ids.map((id, i) => (
+              <div key={id} className="min-w-20 rounded-2xl bg-white/10 px-3 py-2">
+                <div aria-hidden="true" className="text-2xl">
+                  {["🎃", "🦇", "👻", "🐺", "🕸️", "🧛", "🧟", "🕯️", "🦉", "🔮", "🕷️", "🌙"][i % 12]}
+                </div>
+                <div className="mt-1 text-sm font-semibold">{name(id)}</div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-white/50">Costumes are disguises, not secret roles.</p>
+        </div>
         <section className="py-8 text-center">
           <p className="text-sm tracking-widest text-pink-300 uppercase">{p.phase}</p>
           <h1 className="mt-4 text-4xl font-semibold sm:text-6xl">
@@ -57,20 +80,14 @@ export function HostView({ roomCode, players, publicState: p, dispatch, serverNo
               : p.phase === "dating"
                 ? `${p.locked.length} of ${p.ids.length} dates locked in`
                 : p.phase === "reveal"
-                  ? "Check your phone for your secret role."
+                  ? "Welcome to the manor. Check your phone for your secret role. Your messages will be revealed after date night."
                   : ""}
           </p>
         </section>
-        {(p.phase === "results" || p.phase === "over") && (
+        {p.phase === "results" && p.reveal && <DateReveal p={p} name={name} serverNow={serverNow} />}
+        {p.phase === "over" && (
           <section className={card}>
-            <h2 className="mb-4 text-2xl font-bold">{p.phase === "over" ? "Final standings" : "Leaderboard"}</h2>
-            {p.phase === "results" && (
-              <p className="mb-4 text-pink-200">
-                {p.matches.length
-                  ? p.matches.map(([a, b]) => `${name(a)} ♥ ${name(b)}`).join(" · ")
-                  : "No mutual matches this round!"}
-              </p>
-            )}
+            <h2 className="mb-4 text-2xl font-bold">Final standings</h2>
             {[...p.ids]
               .sort((a, b) => p.scores[b] - p.scores[a])
               .map((id) => (
@@ -78,15 +95,7 @@ export function HostView({ roomCode, players, publicState: p, dispatch, serverNo
                   <span>
                     {name(id)} {p.roles[id] && <span className="text-white/60">· {p.roles[id]}</span>}
                   </span>
-                  <span>
-                    {p.scores[id]} pts{" "}
-                    {p.phase === "results" && (
-                      <span className="text-pink-200">
-                        ({p.gains[id] >= 0 ? "+" : ""}
-                        {p.gains[id]})
-                      </span>
-                    )}
-                  </span>
+                  <span>{p.scores[id]} pts</span>
                 </div>
               ))}
           </section>
@@ -113,6 +122,81 @@ export function HostView({ roomCode, players, publicState: p, dispatch, serverNo
         </div>
       </div>
     </main>
+  );
+}
+
+function DateReveal({ p, name, serverNow }: { p: PublicState; name: (id: string) => string; serverNow: () => number }) {
+  const [, setClock] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setClock((v) => v + 1), 500);
+    return () => clearInterval(timer);
+  }, []);
+  const reveal = p.reveal!;
+  const elapsed = Math.max(0, serverNow() - reveal.startedAt);
+  const step = Math.floor(elapsed / 5000);
+  const message = reveal.messages[step];
+  const chooser = reveal.order[step - reveal.messages.length];
+  const target = chooser ? reveal.choices[chooser] : null;
+  const mutual = !!target && reveal.choices[target] === chooser;
+  const theirChoice = target ? reveal.choices[target] : null;
+  return (
+    <section
+      key={step}
+      className="animate-rise rounded-3xl border border-pink-200/20 bg-gradient-to-br from-purple-900 to-rose-950 p-8 text-center shadow-2xl"
+      aria-live="polite"
+    >
+      {message ? (
+        <>
+          <p className="text-sm tracking-widest text-pink-300 uppercase">
+            The manor mail · {step + 1} / {reveal.messages.length}
+          </p>
+          <h2 className="my-4 text-3xl font-bold">What did they say?</h2>
+          <div className="mx-auto max-w-xl space-y-2 text-left">
+            <p className="rounded-2xl bg-white/10 p-3">
+              <span className="text-pink-200">
+                {name(message.from)} → {name(message.to)}:
+              </span>{" "}
+              {message.text}
+            </p>
+          </div>
+        </>
+      ) : chooser ? (
+        <>
+          <p className="text-sm tracking-widest text-pink-300 uppercase">
+            Date night · {step - reveal.messages.length + 1} / {reveal.order.length}
+          </p>
+          <div className="my-6 text-4xl sm:text-5xl">🦇　{target ? "💌" : "🥀"}　👻</div>
+          <h2 className="text-3xl font-bold">
+            {target ? `${name(chooser)} asked ${name(target)}` : `${name(chooser)} stayed in tonight`}
+          </h2>
+          {target && elapsed % 5000 >= 2300 && (
+            <p className="mt-4 text-xl text-pink-200">
+              {mutual
+                ? "It’s a match! ♥"
+                : theirChoice
+                  ? `Rejected! ${name(target)} chose ${name(theirChoice)}.`
+                  : `Rejected! ${name(target)} didn’t choose anyone.`}
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="text-sm tracking-widest text-pink-300 uppercase">The scoreboard</p>
+          <h2 className="my-4 text-3xl font-bold">Hearts and heartbreak</h2>
+          {[...p.ids]
+            .sort((a, b) => p.scores[b] - p.scores[a])
+            .map((id) => (
+              <div key={id} className="mx-auto flex max-w-md justify-between border-t border-white/10 py-2">
+                <span>{name(id)}</span>
+                <span>
+                  {p.scores[id]} pts ({p.gains[id] >= 0 ? "+" : ""}
+                  {p.gains[id]})
+                </span>
+              </div>
+            ))}
+        </>
+      )}
+    </section>
   );
 }
 export function PlayerView({ players, me, publicState: p, privateState: secret, dispatch, serverNow }: Props) {
@@ -150,7 +234,13 @@ export function PlayerView({ players, me, publicState: p, privateState: secret, 
           <p className="text-xs tracking-widest text-pink-300 uppercase">Your secret identity</p>
           <h1 className="mt-2 text-3xl font-bold">{secret.role}</h1>
           <p className="mt-2 text-white/70">{descriptions[secret.role]}</p>
-          <p className="mt-3">Your score: {p.scores[me.id]} pts</p>
+          <p className="mt-3 text-sm text-pink-200">
+            Messages and date choices will be shown to everyone after dating. Mutual dates earn 100 points before
+            powers; the highest score wins.
+          </p>
+          <p className="mt-3">
+            Your score: {p.phase === "results" ? p.scores[me.id] - (p.gains[me.id] ?? 0) : p.scores[me.id]} pts
+          </p>
         </section>
         {p.phase === "reveal" && (
           <button
@@ -228,7 +318,10 @@ export function PlayerView({ players, me, publicState: p, privateState: secret, 
             </button>
           </section>
         )}
-        {(p.phase === "results" || p.phase === "over") && (
+        {p.phase === "results" && (
+          <section className={card}>Watch the manor screen for messages, dates, and the results!</section>
+        )}
+        {p.phase === "over" && (
           <section className={card}>
             <h2 className="text-xl font-bold">{p.phase === "over" ? "Final scores" : "Round results"}</h2>
             {[...p.ids]

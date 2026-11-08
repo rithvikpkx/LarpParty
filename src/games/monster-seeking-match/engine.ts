@@ -3,7 +3,7 @@ import { IllegalIntentError, type GameEngine, type GameState } from "@/platform/
 type Role = "Vampire" | "Werewolf" | "Ghost" | "Serial Flirt";
 type Phase = "reveal" | "texting" | "dating" | "results" | "over";
 export type Settings = { rounds: number };
-export type Message = { from: string; to: string; text: string };
+export type Message = { from: string; to: string; text: string; round: number };
 export type PrivateState = { role: Role; messages: Message[]; sent: number; choice: string | null; locked: boolean };
 export type PublicState = {
   phase: Phase;
@@ -17,6 +17,7 @@ export type PublicState = {
   gains: Record<string, number>;
   matches: [string, string][];
   roles: Record<string, Role>;
+  reveal: { startedAt: number; messages: Message[]; choices: Record<string, string | null>; order: string[] } | null;
 };
 export type Intent =
   | { type: "ready" | "advance" | "lock" }
@@ -53,7 +54,22 @@ function next(s: State, now: number): State {
       }
     }
     const scores = Object.fromEntries(p.ids.map((id) => [id, p.scores[id] + gains[id]]));
-    return { ...s, public: { ...p, phase: "results", deadline: now + 15000, gains, scores, matches } };
+    const messages = p.ids.flatMap((id) => s.private[id].messages.filter((m) => m.from === id && m.round === p.round));
+    const choices = Object.fromEntries(p.ids.map((id) => [id, s.private[id].choice]));
+    const order = [...p.locked, ...p.ids.filter((id) => !p.locked.includes(id))];
+    const duration = Math.max(15000, (messages.length + order.length) * 5000 + 12000);
+    return {
+      ...s,
+      public: {
+        ...p,
+        phase: "results",
+        deadline: now + duration,
+        gains,
+        scores,
+        matches,
+        reveal: { startedAt: now, messages, choices, order },
+      },
+    };
   }
   if (p.round >= p.rounds)
     return {
@@ -66,8 +82,8 @@ function next(s: State, now: number): State {
       },
     };
   return {
-    public: { ...p, phase: "texting", round: p.round + 1, deadline: now + 90000, locked: [] },
-    private: Object.fromEntries(p.ids.map((id) => [id, { ...s.private[id], sent: 0, choice: null, locked: false }])),
+    public: { ...p, phase: "texting", round: p.round + 1, deadline: now + 90000, locked: [], reveal: null },
+    private: Object.fromEntries(p.ids.map((id) => [id, { ...s.private[id], messages: [], sent: 0, choice: null, locked: false }])),
   };
 }
 
@@ -107,6 +123,7 @@ export const engine: GameEngine<Settings, PublicState, PrivateState, Intent> = {
         gains: {},
         matches: [],
         roles: {},
+        reveal: null,
       },
       private: Object.fromEntries(
         shuffled.map((id, i) => [
@@ -143,7 +160,7 @@ export const engine: GameEngine<Settings, PublicState, PrivateState, Intent> = {
         me.sent >= (me.role === "Serial Flirt" ? 12 : 6)
       )
         throw new IllegalIntentError("Message cannot be sent.");
-      const message = { from: id, to: intent.target, text };
+      const message = { from: id, to: intent.target, text, round: s.public.round };
       const recipient = s.private[intent.target];
       return {
         ...s,
