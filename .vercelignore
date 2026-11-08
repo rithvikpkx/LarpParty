@@ -9,7 +9,7 @@ node_modules
 *.md
 
 # Database migrations and Supabase CLI config (applied with the Supabase CLI, not by Vercel)
-supabase/
+/supabase/
 
 # Tests and dev tooling config
 *.test.ts
